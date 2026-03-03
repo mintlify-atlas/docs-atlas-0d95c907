@@ -1,0 +1,364 @@
+---
+title: Webhooks
+description: Configure webhooks to receive real-time event notifications
+---
+
+## Overview
+
+Webhooks allow you to receive real-time notifications when events occur in your Iqra AI account. Instead of polling the API, you can configure webhook endpoints to be notified instantly about call completions, conversation updates, and other important events.
+
+<Info>
+  Webhook configuration is managed through the Iqra AI dashboard under Business Settings > Integrations.
+</Info>
+
+## How webhooks work
+
+1. Configure a webhook URL in your business integrations
+2. When an event occurs, Iqra AI sends an HTTP POST request to your URL
+3. Your server processes the event and responds with a 200 status code
+4. If delivery fails, Iqra AI retries with exponential backoff
+
+## Setting up webhooks
+
+### Create a webhook integration
+
+1. Navigate to your business in the Iqra AI dashboard
+2. Go to Settings > Integrations
+3. Click "Add Integration" and select "Webhook"
+4. Configure the following:
+
+<ParamField body="Type" type="string" required>
+  Set to `webhook`
+</ParamField>
+
+<ParamField body="FriendlyName" type="string" required>
+  A descriptive name for this webhook (e.g., "Production Event Handler")
+</ParamField>
+
+<ParamField body="Fields.Url" type="string" required>
+  Your HTTPS endpoint URL that will receive webhook events
+</ParamField>
+
+<ParamField body="Fields.Events" type="array" required>
+  Array of event types to subscribe to (e.g., `call.completed`, `conversation.ended`)
+</ParamField>
+
+<ParamField body="EncryptedFields.Secret" type="string">
+  Optional signing secret to verify webhook authenticity
+</ParamField>
+
+### Configure event subscriptions
+
+Select which events you want to receive:
+
+- **call.initiated** - Outbound call has been queued
+- **call.started** - Call connection established
+- **call.completed** - Call has ended
+- **call.failed** - Call could not be completed
+- **conversation.started** - Conversation session began
+- **conversation.message** - New message in conversation
+- **conversation.ended** - Conversation session completed
+- **agent.joined** - AI agent joined conversation
+- **agent.left** - AI agent left conversation
+
+## Webhook payload structure
+
+All webhook events follow this structure:
+
+```json
+{
+  "EventType": "call.completed",
+  "EventId": "evt_abc123xyz789",
+  "Timestamp": "2024-01-15T14:35:30Z",
+  "BusinessId": 12345,
+  "Data": {
+    // Event-specific data
+  }
+}
+```
+
+<ResponseField name="EventType" type="string">
+  The type of event that occurred
+</ResponseField>
+
+<ResponseField name="EventId" type="string">
+  Unique identifier for this event (for deduplication)
+</ResponseField>
+
+<ResponseField name="Timestamp" type="string">
+  ISO 8601 timestamp when the event occurred
+</ResponseField>
+
+<ResponseField name="BusinessId" type="integer">
+  ID of the business this event relates to
+</ResponseField>
+
+<ResponseField name="Data" type="object">
+  Event-specific payload data
+</ResponseField>
+
+## Event types and payloads
+
+### call.completed
+
+Sent when an outbound call finishes:
+
+```json
+{
+  "EventType": "call.completed",
+  "EventId": "evt_abc123",
+  "Timestamp": "2024-01-15T14:35:30Z",
+  "BusinessId": 12345,
+  "Data": {
+    "QueueId": "queue_xyz789",
+    "SessionId": "session_abc123",
+    "RecipientNumber": "+1234567890",
+    "Status": "Completed",
+    "Duration": 330,
+    "EndType": "Normal",
+    "CampaignId": "campaign_001",
+    "Metadata": {
+      "CustomField": "value"
+    }
+  }
+}
+```
+
+### conversation.ended
+
+Sent when a conversation session completes:
+
+```json
+{
+  "EventType": "conversation.ended",
+  "EventId": "evt_def456",
+  "Timestamp": "2024-01-15T14:35:30Z",
+  "BusinessId": 12345,
+  "Data": {
+    "SessionId": "session_abc123",
+    "QueueId": "queue_xyz789",
+    "StartTime": "2024-01-15T14:30:00Z",
+    "EndTime": "2024-01-15T14:35:30Z",
+    "Duration": 330,
+    "MessageCount": 12,
+    "EndType": "Normal",
+    "Summary": "Customer inquiry about pricing"
+  }
+}
+```
+
+### conversation.message
+
+Sent when a new message is added to a conversation:
+
+```json
+{
+  "EventType": "conversation.message",
+  "EventId": "evt_ghi789",
+  "Timestamp": "2024-01-15T14:30:05Z",
+  "BusinessId": 12345,
+  "Data": {
+    "SessionId": "session_abc123",
+    "SenderId": "client_123",
+    "Role": "User",
+    "Content": "I'd like to know more about your pricing.",
+    "Timestamp": "2024-01-15T14:30:05Z"
+  }
+}
+```
+
+## Securing webhooks
+
+### Verify signatures
+
+If you configured a signing secret, each webhook includes a signature in the `X-Iqra-Signature` header:
+
+```
+X-Iqra-Signature: sha256=abc123...
+```
+
+Verify the signature using HMAC SHA-256:
+
+<CodeGroup>
+```javascript JavaScript
+const crypto = require('crypto');
+
+function verifyWebhook(payload, signature, secret) {
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(payload).digest('hex');
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(digest)
+  );
+}
+```
+
+```python Python
+import hmac
+import hashlib
+
+def verify_webhook(payload: bytes, signature: str, secret: str) -> bool:
+    expected = 'sha256=' + hmac.new(
+        secret.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
+```
+</CodeGroup>
+
+### Validate event IDs
+
+Store processed event IDs to prevent duplicate processing:
+
+```javascript
+const processedEvents = new Set();
+
+function handleWebhook(event) {
+  if (processedEvents.has(event.EventId)) {
+    console.log('Duplicate event, skipping');
+    return;
+  }
+  
+  processedEvents.add(event.EventId);
+  // Process event...
+}
+```
+
+## Responding to webhooks
+
+Your endpoint should:
+
+1. Respond quickly (within 5 seconds)
+2. Return HTTP 200 status code
+3. Process the event asynchronously if needed
+
+```javascript
+app.post('/webhooks/iqra', async (req, res) => {
+  // Respond immediately
+  res.status(200).send('OK');
+  
+  // Process asynchronously
+  processWebhookAsync(req.body).catch(console.error);
+});
+```
+
+## Retry behavior
+
+If webhook delivery fails (non-200 response or timeout):
+
+- First retry: after 1 minute
+- Second retry: after 5 minutes
+- Third retry: after 15 minutes
+- Fourth retry: after 1 hour
+- Fifth retry: after 6 hours
+
+After 5 failed attempts, the webhook is marked as failed and no more retries are attempted.
+
+## Testing webhooks
+
+### Use webhook testing tools
+
+During development, use tools like:
+
+- [webhook.site](https://webhook.site) - Inspect webhook payloads
+- [ngrok](https://ngrok.com) - Expose local server for testing
+- [requestbin](https://requestbin.com) - Collect and examine webhooks
+
+### Trigger test events
+
+You can trigger test events from the dashboard:
+
+1. Go to Integrations > Your Webhook
+2. Click "Send Test Event"
+3. Select event type and review the payload
+4. Send to your endpoint
+
+## Best practices
+
+### Endpoint design
+
+- Use HTTPS for security
+- Implement signature verification
+- Return 200 quickly, process asynchronously
+- Handle duplicate events gracefully
+- Log all webhook activity
+
+### Error handling
+
+- Don't fail on unknown event types (for forward compatibility)
+- Validate payload structure before processing
+- Store failed events for manual review
+- Alert on repeated webhook failures
+
+### Performance
+
+- Process webhooks in a queue
+- Scale webhook handlers independently
+- Monitor processing latency
+- Set up dead letter queues for failures
+
+### Security
+
+- Whitelist Iqra AI IP addresses if possible
+- Verify webhook signatures
+- Don't expose sensitive data in logs
+- Rotate signing secrets periodically
+
+## Monitoring webhooks
+
+The Iqra AI dashboard provides webhook monitoring:
+
+- Delivery success/failure rates
+- Recent webhook deliveries and responses
+- Retry attempts and outcomes
+- Event type distribution
+
+Access this in your business settings under Integrations > Webhook > Delivery Logs.
+
+## Common issues
+
+### Webhooks not being received
+
+- Verify your endpoint URL is correct and accessible
+- Check that your server is responding with 200
+- Ensure your firewall allows Iqra AI's IP addresses
+- Review webhook logs in the dashboard
+
+### Duplicate events
+
+- This is normal due to retry logic
+- Implement idempotency using EventId
+- Store processed event IDs
+
+### Timeout errors
+
+- Your endpoint must respond within 5 seconds
+- Process events asynchronously
+- Return 200 immediately
+
+## Reference
+
+### Integration object structure
+
+Webhook integrations are stored with this structure:
+
+```json
+{
+  "Id": "integration_abc123",
+  "Type": "webhook",
+  "FriendlyName": "Production Webhook",
+  "Fields": {
+    "Url": "https://api.yourapp.com/webhooks/iqra",
+    "Events": [
+      "call.completed",
+      "conversation.ended"
+    ]
+  },
+  "EncryptedFields": {
+    "Secret": "[encrypted]"
+  }
+}
+```
+
+Webhook integrations are managed through the Business API as part of the [Integrations](/api/businesses#integrations) collection.

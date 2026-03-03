@@ -1,0 +1,321 @@
+---
+title: "Setting up a knowledge base"
+description: "Create and configure knowledge bases for your agents"
+---
+
+## Prerequisites
+
+Before creating a knowledge base, ensure you have:
+
+- A configured embedding provider integration (see [Embedding providers](/knowledge/embedding-providers))
+- Access to the Iqra AI platform or self-hosted instance
+- Documents to upload (PDF, TXT, or other supported formats)
+
+<Note>
+Self-hosted deployments require Milvus, MongoDB, and Redis to be properly configured. See the [deployment guide](/deployment/cloud) for infrastructure setup.
+</Note>
+
+## Creating a knowledge base
+
+<Steps>
+  <Step title="Navigate to knowledge bases">
+    From your business dashboard, access the knowledge base management section.
+  </Step>
+  
+  <Step title="Create new knowledge base">
+    Click **Create Knowledge Base** and provide:
+    - **Name**: A descriptive name for the knowledge base
+    - **Description**: Optional description of the content and purpose
+  </Step>
+  
+  <Step title="Configure chunking strategy">
+    Choose how documents will be split into chunks:
+    
+    ### General chunking
+    
+    Best for uniformly structured content like articles or documentation.
+    
+    ```typescript
+    {
+      Type: "General",
+      Delimiter: "\\n\\n",      // Split on double newlines
+      MaxLength: 1024,         // Maximum chunk size in characters
+      Overlap: 50,             // Character overlap between chunks
+      Preprocess: {
+        ReplaceConsecutive: true,  // Normalize whitespace
+        DeleteUrls: false          // Keep URLs in text
+      }
+    }
+    ```
+    
+    <Tip>
+    Start with 1024 character chunks and 50 character overlap. Adjust based on your content structure and retrieval quality.
+    </Tip>
+    
+    ### Parent-child chunking
+    
+    Better for complex documents where context is crucial.
+    
+    ```typescript
+    {
+      Type: "ParentChild",
+      Parent: {
+        Type: "Paragraph",      // or use custom delimiter
+        Delimiter: null,        // null for paragraph-based
+        MaxLength: null
+      },
+      Child: {
+        Delimiter: "\\n",       // Split on single newline
+        MaxLength: 512          // Smaller child chunks
+      },
+      Preprocess: {
+        ReplaceConsecutive: true,
+        DeleteUrls: false
+      }
+    }
+    ```
+    
+    <Note>
+    Parent-child chunking retrieves child chunks but provides parent context to the agent, improving answer quality while maintaining retrieval precision.
+    </Note>
+  </Step>
+  
+  <Step title="Configure embedding">
+    Select your embedding integration and model:
+    
+    - **Integration**: Choose from configured embedding providers
+    - **Model**: Select the embedding model (e.g., `text-embedding-004`)
+    - **Vector dimension**: Set based on model specifications
+    
+    <Warning>
+    Changing the embedding model after documents are indexed requires re-indexing all content. Choose carefully.
+    </Warning>
+  </Step>
+  
+  <Step title="Configure retrieval strategy">
+    Select how the knowledge base will retrieve relevant chunks:
+    
+    ### Vector search
+    
+    ```typescript
+    {
+      Type: "VectorSearch",
+      TopK: 3,                    // Number of chunks to retrieve
+      UseScoreThreshold: true,
+      ScoreThreshold: 0.7,        // Minimum similarity score (0-1)
+      Rerank: {
+        Enabled: true,
+        Integration: "rerank-integration-id"
+      }
+    }
+    ```
+    
+    ### Full-text search
+    
+    ```typescript
+    {
+      Type: "FullTextSearch",
+      TopK: 3,
+      Rerank: {
+        Enabled: false,
+        Integration: null
+      }
+    }
+    ```
+    
+    ### Hybrid search
+    
+    ```typescript
+    {
+      Type: "HybridSearch",
+      Mode: "WeightedScore",     // or "Rerank"
+      Weight: 0.7,                // Vector weight (0-1)
+      TopK: 3,
+      UseScoreThreshold: true,
+      ScoreThreshold: 0.6,
+      RerankIntegration: null
+    }
+    ```
+    
+    <Tip>
+    Hybrid search with 70% vector weight typically provides the best balance between semantic understanding and exact keyword matching.
+    </Tip>
+  </Step>
+  
+  <Step title="Save configuration">
+    Review your settings and click **Create** to initialize the knowledge base.
+  </Step>
+</Steps>
+
+## Uploading documents
+
+Once your knowledge base is created:
+
+<Steps>
+  <Step title="Add documents">
+    Click **Upload Documents** and select files from your computer. Supported formats include:
+    - PDF (via PDF extractor or Unstructured API)
+    - Plain text (.txt)
+    - Other formats supported by Unstructured API
+  </Step>
+  
+  <Step title="Processing">
+    Documents are processed asynchronously:
+    1. Text extraction
+    2. Cleaning and preprocessing
+    3. Chunking based on your strategy
+    4. Embedding generation
+    5. Storage in Milvus and MongoDB
+    6. Keyword index creation
+    
+    Large documents may take several minutes to process.
+  </Step>
+  
+  <Step title="Verify indexing">
+    Once processing completes, verify:
+    - Document status shows as **Indexed**
+    - Chunk count matches expectations
+    - No error messages in the document details
+  </Step>
+</Steps>
+
+<Note>
+The system generates embeddings in batches to optimize API usage. Embedding costs are determined by your provider's pricing model.
+</Note>
+
+## Linking to agents
+
+To enable an agent to use the knowledge base:
+
+<Steps>
+  <Step title="Open agent configuration">
+    Navigate to your agent's settings in the Script Builder.
+  </Step>
+  
+  <Step title="Add knowledge base link">
+    In the Knowledge Base section:
+    1. Click **Link Knowledge Base**
+    2. Select the knowledge base from the dropdown
+    3. Configure search strategy (if different from defaults)
+  </Step>
+  
+  <Step title="Configure search strategy">
+    Optionally override retrieval settings for this agent:
+    - **TopK**: Number of chunks to retrieve per query
+    - **Search refinement**: Additional filtering or boosting
+  </Step>
+  
+  <Step title="Test retrieval">
+    Use the testing interface to verify:
+    - Queries return relevant chunks
+    - Context quality meets expectations
+    - Response latency is acceptable
+  </Step>
+</Steps>
+
+## Managing documents
+
+### Updating documents
+
+When updating an existing document:
+
+1. Upload the new version with the same filename
+2. The system will:
+   - Delete old chunks from Milvus and keyword store
+   - Reprocess the new content
+   - Generate fresh embeddings
+   - Update vector and keyword indices
+
+<Warning>
+Updating documents with many chunks can be resource-intensive. Consider scheduling updates during low-traffic periods.
+</Warning>
+
+### Deleting documents
+
+To remove a document:
+
+1. Select the document in the knowledge base
+2. Click **Delete**
+3. Confirm deletion
+
+The system will:
+- Remove all chunks from Milvus
+- Delete keyword index entries
+- Clean up metadata in MongoDB
+
+### Disabling documents
+
+Temporarily disable documents without deleting:
+
+1. Toggle the document's **Enabled** status
+2. Disabled chunks are excluded from retrieval
+3. Re-enable anytime to restore access
+
+## Performance optimization
+
+### Chunk size tuning
+
+Optimal chunk size depends on your use case:
+
+- **Small chunks (256-512 chars)**: Better precision, may lack context
+- **Medium chunks (512-1024 chars)**: Balanced approach, recommended default
+- **Large chunks (1024-2048 chars)**: More context, may dilute relevance
+
+<Tip>
+Use parent-child chunking if you need both precision and context without compromising either.
+</Tip>
+
+### Overlap configuration
+
+Chunk overlap prevents information loss at boundaries:
+
+- **No overlap (0)**: Faster processing, risk of split concepts
+- **Low overlap (20-50 chars)**: Minimal redundancy, good for most content
+- **High overlap (100-200 chars)**: Maximum continuity, increased storage
+
+### Collection management
+
+Milvus collections are automatically managed:
+
+- Loaded into memory when agents query them
+- Released after configurable idle period (default: 1 hour)
+- Reloaded on-demand with minimal latency
+
+<Note>
+Frequently accessed knowledge bases remain in memory, while rarely used ones are unloaded to conserve resources.
+</Note>
+
+## Monitoring and maintenance
+
+### Health checks
+
+Regularly verify:
+
+- All documents show **Indexed** status
+- No failed embedding generation jobs
+- Milvus collections are accessible
+- Embedding cache hit rate is reasonable
+
+### Updating embeddings
+
+If you change embedding providers:
+
+1. Update the knowledge base configuration
+2. Trigger full re-indexing of all documents
+3. Monitor progress in the processing queue
+4. Verify retrieval quality with test queries
+
+<Warning>
+Re-indexing generates new embeddings for all chunks and may incur significant API costs. Test with a subset first.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Embedding providers" icon="brain" href="/knowledge/embedding-providers">
+    Configure and optimize embedding integrations
+  </Card>
+  <Card title="Retrieval strategies" icon="magnifying-glass" href="/knowledge/retrieval">
+    Learn about retrieval configuration and optimization
+  </Card>
+</CardGroup>

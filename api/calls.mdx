@@ -1,0 +1,230 @@
+---
+title: Calls
+description: Initiate and manage outbound calls
+---
+
+## Initiate call
+
+Queue an outbound call to be processed by your AI agent.
+
+```http
+POST /api/v1/business/{businessId}/call/initiate
+```
+
+### Path parameters
+
+<ParamField path="businessId" type="integer" required>
+  The unique identifier for your business
+</ParamField>
+
+### Request body
+
+This endpoint accepts `multipart/form-data` with a maximum size of 10MB.
+
+<ParamField body="RecipientNumber" type="string" required>
+  Phone number to call in E.164 format (e.g., +1234567890)
+</ParamField>
+
+<ParamField body="NumberId" type="string" required>
+  ID of the phone number to call from (must be configured in your business)
+</ParamField>
+
+<ParamField body="AgentId" type="string" required>
+  ID of the AI agent to use for this call
+</ParamField>
+
+<ParamField body="CampaignId" type="string">
+  Optional campaign ID to associate with this call for tracking and analytics
+</ParamField>
+
+<ParamField body="ScheduledTime" type="string">
+  ISO 8601 timestamp to schedule the call for a future time. If not provided, the call is queued immediately.
+</ParamField>
+
+<ParamField body="DynamicVariables" type="object">
+  Key-value pairs of dynamic variables to use during the call (e.g., customer name, account number). These are available to the agent during conversation.
+</ParamField>
+
+<ParamField body="Metadata" type="object">
+  Additional metadata to attach to the call for your own tracking purposes
+</ParamField>
+
+### Response
+
+<ResponseField name="Success" type="boolean">
+  Indicates whether the call was successfully queued
+</ResponseField>
+
+<ResponseField name="Data" type="array">
+  Array containing the queue ID(s) for the initiated call(s)
+</ResponseField>
+
+<ResponseField name="Code" type="string">
+  Error code if Success is false
+</ResponseField>
+
+<ResponseField name="Message" type="string">
+  Error message if Success is false or success confirmation
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.iqra.ai/api/v1/business/12345/call/initiate \
+  -H "Authorization: Token YOUR_API_KEY" \
+  -F "RecipientNumber=+1234567890" \
+  -F "NumberId=num_abc123" \
+  -F "AgentId=agent_xyz789" \
+  -F "CampaignId=campaign_001" \
+  -F "DynamicVariables[CustomerName]=John Doe" \
+  -F "DynamicVariables[AccountNumber]=12345" \
+  -F "Metadata[Source]=API"
+```
+
+```javascript JavaScript
+const formData = new FormData();
+formData.append('RecipientNumber', '+1234567890');
+formData.append('NumberId', 'num_abc123');
+formData.append('AgentId', 'agent_xyz789');
+formData.append('CampaignId', 'campaign_001');
+formData.append('DynamicVariables[CustomerName]', 'John Doe');
+formData.append('DynamicVariables[AccountNumber]', '12345');
+formData.append('Metadata[Source]', 'API');
+
+const response = await fetch(
+  'https://api.iqra.ai/api/v1/business/12345/call/initiate',
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Token YOUR_API_KEY'
+    },
+    body: formData
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+data = {
+    'RecipientNumber': '+1234567890',
+    'NumberId': 'num_abc123',
+    'AgentId': 'agent_xyz789',
+    'CampaignId': 'campaign_001',
+    'DynamicVariables[CustomerName]': 'John Doe',
+    'DynamicVariables[AccountNumber]': '12345',
+    'Metadata[Source]': 'API'
+}
+
+response = requests.post(
+    'https://api.iqra.ai/api/v1/business/12345/call/initiate',
+    headers={'Authorization': 'Token YOUR_API_KEY'},
+    data=data
+)
+
+result = response.json()
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "Success": true,
+  "Data": [
+    "queue_abc123xyz789"
+  ]
+}
+```
+
+### Error response example
+
+```json
+{
+  "Success": false,
+  "Code": "InitiateCall:INSUFFICIENT_BALANCE",
+  "Message": "Insufficient balance or minutes to make this call",
+  "Data": null
+}
+```
+
+## Call queue lifecycle
+
+When you initiate a call, it goes through the following states:
+
+1. **Queued** - Call is in the queue waiting to be processed
+2. **Processing** - Call is being dialed
+3. **In Progress** - Call is connected and conversation is active
+4. **Completed** - Call has ended
+5. **Failed** - Call could not be completed
+
+You can track call status using the [Queue endpoints](/api/conversations#get-outbound-queue).
+
+## Permissions required
+
+This endpoint requires:
+
+- Valid API key with access to the specified business
+- `MakeCall` module permission with `Full` access
+- User and business must not be disabled
+- Business must have editing enabled
+- Sufficient balance or package minutes for making calls
+
+## Rate limits and quotas
+
+<Warning>
+  Call initiation is subject to your account's balance and usage limits.
+</Warning>
+
+- Each call consumes minutes from your package or balance
+- You must have sufficient credits before the call can be queued
+- The system validates your balance before accepting the call request
+
+## Common error codes
+
+| Code | Description |
+|------|-------------|
+| `InitiateCall:INSUFFICIENT_BALANCE` | Not enough credits or minutes to make the call |
+| `InitiateCall:INVALID_NUMBER` | Invalid recipient phone number format |
+| `InitiateCall:INVALID_AGENT` | Agent ID not found or disabled |
+| `InitiateCall:INVALID_NUMBER_ID` | Calling number ID not found or not configured |
+| `InitiateCall:PERMISSION_DENIED` | Insufficient permissions to make calls |
+| `InitiateCall:BUSINESS_DISABLED` | Business account is disabled |
+| `InitiateCall:EXCEPTION` | Internal server error |
+
+## Best practices
+
+### Phone numbers
+
+- Always use E.164 format for recipient numbers (+[country code][number])
+- Verify numbers are valid before making calls
+- Respect do-not-call lists and local regulations
+
+### Dynamic variables
+
+- Use dynamic variables to personalize conversations
+- Keep variable names consistent across your integration
+- Don't include sensitive information in metadata
+
+### Scheduling
+
+- Schedule calls during appropriate business hours for the recipient's timezone
+- Use campaigns to batch and track related calls
+- Monitor queue status to ensure calls are being processed
+
+### Error handling
+
+- Always check the `Success` field in the response
+- Log queue IDs for tracking and debugging
+- Implement retry logic for transient failures
+- Handle balance/quota errors gracefully
+
+## Notes
+
+- Calls are processed asynchronously; the API returns immediately after queuing
+- Use the queue ID to track call status and retrieve conversation details
+- Maximum request size is 10MB for the entire multipart form
+- Scheduled calls are processed at the specified time (subject to queue availability)

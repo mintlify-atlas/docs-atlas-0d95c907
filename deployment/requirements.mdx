@@ -1,0 +1,502 @@
+---
+title: System requirements
+description: Hardware specifications, dependencies, and capacity planning for self-hosted Iqra AI deployments
+---
+
+This guide outlines the system requirements for running Iqra AI on your own infrastructure, including hardware specifications, software dependencies, and capacity planning recommendations.
+
+## Minimum requirements
+
+The absolute minimum configuration for development and testing:
+
+<CardGroup cols={2}>
+  <Card title="CPU" icon="microchip">
+    4 cores (8 threads recommended)
+  </Card>
+  <Card title="RAM" icon="memory">
+    16 GB (32 GB recommended)
+  </Card>
+  <Card title="Storage" icon="hard-drive">
+    100 GB SSD
+  </Card>
+  <Card title="Network" icon="network-wired">
+    100 Mbps symmetric
+  </Card>
+</CardGroup>
+
+<Warning>
+  These minimum specs support **up to 5 concurrent calls**. For production workloads, see the production requirements below.
+</Warning>
+
+## Production requirements
+
+### Single-region deployment (25 concurrent calls)
+
+| Component | Specification |
+|-----------|---------------|
+| **CPU** | 16 cores (32 threads) |
+| **RAM** | 64 GB ECC |
+| **Storage** | 500 GB NVMe SSD |
+| **Network** | 1 Gbps symmetric, &lt;20ms latency |
+| **Network Interface** | Dedicated interface for RTP traffic |
+
+### Multi-region deployment (100+ concurrent calls)
+
+For horizontal scaling across multiple regions:
+
+**Per Backend App instance:**
+- **CPU**: 16 cores
+- **RAM**: 32 GB
+- **Storage**: 250 GB SSD
+- **Network**: 1 Gbps dedicated
+
+**Shared infrastructure:**
+- **MongoDB**: 32 cores, 128 GB RAM, 1 TB SSD (replica set)
+- **Redis**: 16 cores, 64 GB RAM, 250 GB SSD (cluster mode)
+- **Milvus**: 16 cores, 64 GB RAM, 500 GB SSD
+- **S3 Storage**: 5 TB minimum, expandable
+
+## Software dependencies
+
+### Required runtime
+
+<Tabs>
+  <Tab title=".NET 10 Runtime">
+    **Version:** .NET 10.0 or later
+    
+    The ASP.NET Core Runtime is required for all four services:
+    - Frontend Dashboard
+    - Backend Proxy
+    - Backend App
+    - Background Processor
+    
+    **Installation:**
+    ```bash
+    # Ubuntu/Debian
+    wget https://dot.net/v1/dotnet-install.sh
+    chmod +x dotnet-install.sh
+    ./dotnet-install.sh --channel 10.0 --runtime aspnetcore
+    
+    # Verify installation
+    dotnet --version
+    ```
+    
+    **Supported platforms:**
+    - Linux (x64, ARM64)
+    - Windows Server 2019+
+    - macOS (development only)
+  </Tab>
+</Tabs>
+
+### Database systems
+
+<AccordionGroup>
+  <Accordion title="MongoDB - Primary metadata storage">
+    **Version:** 6.0 or later (7.0 recommended)
+    
+    **Purpose:** Stores all application metadata including:
+    - User accounts and authentication
+    - Agent configurations and scripts
+    - Conversation history and logs
+    - Integration settings
+    - Billing and usage data
+    
+    **Configuration requirements:**
+    - Replica set (minimum 3 nodes for production)
+    - Transactions support enabled
+    - WiredTiger storage engine
+    - Minimum 50 GB storage allocation
+    
+    **Recommended setup:**
+    ```bash
+    # Install MongoDB 7.0
+    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+      sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+    
+    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+      sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    
+    sudo apt-get update
+    sudo apt-get install -y mongodb-org
+    ```
+    
+    **Performance tuning:**
+    - Enable compression: `storage.wiredTiger.collectionConfig.blockCompressor=snappy`
+    - Set cache size: `storage.wiredTiger.engineConfig.cacheSizeGB=16`
+  </Accordion>
+  
+  <Accordion title="Redis - Session state and caching">
+    **Version:** 7.0 or later
+    
+    **Purpose:**
+    - Real-time session state for active calls
+    - Pub/Sub for inter-service communication
+    - Call queue management for outbound dialing
+    - L1 cache for TTS audio (Backend App only)
+    
+    **Configuration requirements:**
+    - Redis Cluster for production (minimum 6 nodes: 3 primary + 3 replicas)
+    - Standalone acceptable for development
+    - Persistence enabled (RDB + AOF)
+    - Minimum 8 GB memory allocation
+    
+    **Memory policy:**
+    ```bash
+    # /etc/redis/redis.conf
+    maxmemory 8gb
+    maxmemory-policy allkeys-lru
+    save 900 1
+    save 300 10
+    save 60 10000
+    appendonly yes
+    appendfsync everysec
+    ```
+    
+    <Note>
+      The Backend App requires a **separate local Redis instance** for TTS audio caching to minimize latency. This should run on `127.0.0.1` on the same machine.
+    </Note>
+  </Accordion>
+  
+  <Accordion title="Milvus - Vector database for RAG">
+    **Version:** 2.4.0 or later
+    
+    **Purpose:**
+    - Stores embeddings for knowledge base documents
+    - Enables semantic search and RAG (Retrieval-Augmented Generation)
+    - Powers conversation memory and context retrieval
+    
+    **Deployment modes:**
+    - **Standalone** - Single-node deployment for development/small-scale
+    - **Distributed** - Multi-node cluster for production
+    
+    **Resource requirements:**
+    - Minimum 16 GB RAM (scales with vector count)
+    - GPU optional but recommended for large-scale deployments
+    - SSD storage for index files
+    
+    **Installation (Docker):**
+    ```bash
+    wget https://github.com/milvus-io/milvus/releases/download/v2.4.0/milvus-standalone-docker-compose.yml -O docker-compose.yml
+    docker-compose up -d
+    ```
+    
+    **Ports:**
+    - `19530` - gRPC API
+    - `9091` - HTTP API (used by Iqra)
+    
+    **Performance tuning:**
+    - Adjust collection memory limits based on embedding dimensions
+    - Configure index type (HNSW recommended for most use cases)
+    - Set appropriate `CollectionStaleTimeoutMinutes` to unload unused collections
+  </Accordion>
+</AccordionGroup>
+
+### Object storage
+
+<Tabs>
+  <Tab title="RustFS (Recommended)">
+    **Purpose:** S3-compatible storage for:
+    - Call recordings (audio files)
+    - TTS audio cache
+    - User-uploaded documents and knowledge base files
+    - Logo images and assets
+    
+    **Requirements:**
+    - Minimum 500 GB storage
+    - 1 GB RAM per TB of storage
+    - Fast disk I/O for audio streaming
+    
+    RustFS is a lightweight, high-performance S3-compatible server ideal for self-hosted deployments.
+  </Tab>
+  
+  <Tab title="AWS S3">
+    **Configuration:**
+    - Create dedicated bucket per region
+    - Enable versioning for data recovery
+    - Configure lifecycle policies for archival
+    
+    **IAM permissions required:**
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "s3:PutObject",
+            "s3:GetObject",
+            "s3:DeleteObject",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::your-bucket-name",
+            "arn:aws:s3:::your-bucket-name/*"
+          ]
+        }
+      ]
+    }
+    ```
+  </Tab>
+  
+  <Tab title="MinIO">
+    **Deployment:**
+    ```bash
+    docker run -p 9000:9000 -p 9001:9001 \
+      -e MINIO_ROOT_USER=admin \
+      -e MINIO_ROOT_PASSWORD=strongpassword \
+      -v /mnt/data:/data \
+      minio/minio server /data --console-address ":9001"
+    ```
+    
+    **Resource requirements:**
+    - 4 GB RAM minimum
+    - Fast SSD or NVMe storage
+    - Multiple disks for erasure coding (production)
+  </Tab>
+</Tabs>
+
+## Operating system support
+
+### Supported platforms
+
+<Tabs>
+  <Tab title="Linux (Recommended)">
+    **Recommended distributions:**
+    - Ubuntu 22.04 LTS or later
+    - Debian 12 or later
+    - CentOS Stream 9
+    - Red Hat Enterprise Linux 9
+    - Rocky Linux 9
+    
+    **Kernel requirements:**
+    - Linux kernel 5.15 or later
+    - `iptables` or `nftables` for firewall
+    - Network namespaces support
+    
+    **Why Linux is recommended:**
+    - Superior network stack for real-time audio (RTP/UDP)
+    - Better performance under high concurrent load
+    - Easier to deploy with systemd
+  </Tab>
+  
+  <Tab title="Windows Server">
+    **Supported versions:**
+    - Windows Server 2019 or later
+    - Windows Server 2022 (recommended)
+    
+    **Requirements:**
+    - Windows Defender Firewall configured for RTP ports
+    - Network adapter with static IP
+    
+    **Limitations:**
+    - Higher latency for audio processing compared to Linux
+    - More complex network interface configuration
+  </Tab>
+  
+  <Tab title="macOS (Development only)">
+    **Supported versions:**
+    - macOS Monterey (12) or later
+    
+    **Not recommended for production** due to:
+    - Network stack optimizations missing
+    - Licensing restrictions for server use
+    - Limited to development and testing
+  </Tab>
+</Tabs>
+
+## Network requirements
+
+### Bandwidth calculation
+
+Per concurrent call:
+- **Audio codec (PCMU/PCMA)**: ~80 Kbps (40 Kbps upload + 40 Kbps download)
+- **Overhead (RTP/UDP headers)**: ~10 Kbps
+- **Total per call**: ~90 Kbps
+
+**Example calculations:**
+- 25 concurrent calls: 2.25 Mbps
+- 100 concurrent calls: 9 Mbps
+- 500 concurrent calls: 45 Mbps
+
+<Note>
+  Add 30% headroom for bursts and signaling traffic. A 25-call system should have minimum 3 Mbps symmetric bandwidth.
+</Note>
+
+### Port requirements
+
+| Service | Protocol | Port | Purpose |
+|---------|----------|------|----------|
+| Frontend | TCP | 5000 | Dashboard HTTP |
+| Frontend | TCP | 5001 | Dashboard HTTPS |
+| Backend Proxy | TCP | 5060 | SIP signaling |
+| Backend Proxy | UDP | 10000-20000 | RTP audio |
+| Backend App | UDP | 20000-40000 | RTP audio |
+| MongoDB | TCP | 27017 | Database |
+| Redis | TCP | 6379 | Cache/Queue |
+| Milvus | TCP | 9091 | Vector DB API |
+| RustFS/S3 | TCP | 9000 | Object storage |
+
+<Warning>
+  Ensure your firewall allows UDP traffic on the RTP port ranges. Blocking UDP will prevent all audio from flowing.
+</Warning>
+
+### Latency requirements
+
+**Recommended RTT (Round-Trip Time):**
+- Backend to MongoDB: &lt;5ms
+- Backend to Redis: &lt;2ms (ideally localhost)
+- Backend to Milvus: &lt;10ms
+- Backend to S3: &lt;20ms
+- User to Backend (RTP): &lt;150ms for acceptable call quality
+
+### Network interface configuration
+
+The Backend App and Proxy bind to a specific OS network interface for RTP:
+
+<CodeGroup>
+```bash Linux
+# Find your interface name
+ip addr
+# Common names: eth0, ens5, ens160
+
+# Test interface is active
+ping -I eth0 8.8.8.8
+```
+
+```powershell Windows
+# List adapters
+ipconfig
+# Common names: "Ethernet", "vEthernet (WSL)"
+
+# In appsettings.json, use the exact adapter name:
+"NetworkInterfaceName": "Ethernet"
+```
+</CodeGroup>
+
+## Capacity planning
+
+### Concurrent call capacity
+
+Estimating the number of concurrent calls a Backend App instance can handle:
+
+| Hardware | Concurrent Calls | Notes |
+|----------|-----------------|--------|
+| 4 cores, 16 GB RAM | 5-10 | Development only |
+| 8 cores, 32 GB RAM | 10-25 | Small production |
+| 16 cores, 64 GB RAM | 25-50 | Recommended production |
+| 32 cores, 128 GB RAM | 50-100 | High-volume |
+
+<Note>
+  Actual capacity depends on:
+  - AI model latency (OpenAI, Anthropic response times)
+  - TTS provider speed (ElevenLabs, Deepgram)
+  - Conversation complexity and tool usage
+  - Network quality and latency
+</Note>
+
+### Storage growth estimation
+
+**MongoDB:**
+- Agent configuration: ~500 KB per agent
+- Conversation log: ~50 KB per minute of call
+- User data: ~10 KB per user
+
+**S3 Storage:**
+- Call recording (compressed): ~500 KB per minute
+- TTS audio cache: ~20 KB per utterance (with high reuse)
+- Documents (RAG): Variable, typically 1-10 MB per document
+
+**Example: 1000 hours of calls per month**
+- MongoDB: ~3 GB
+- S3 Recordings: ~30 GB
+- TTS Cache: ~5 GB (with cache hits)
+
+### Scaling strategies
+
+<Steps>
+  <Step title="Vertical scaling">
+    Add more CPU and RAM to existing Backend App servers (up to 100 concurrent calls per instance).
+  </Step>
+  
+  <Step title="Horizontal scaling">
+    Deploy additional Backend App instances in the same region. The Backend Proxy automatically load balances.
+  </Step>
+  
+  <Step title="Multi-region deployment">
+    Deploy separate infrastructure stacks in different geographic regions to reduce latency for global users.
+  </Step>
+  
+  <Step title="Database scaling">
+    Convert MongoDB to replica set, then eventually to sharded cluster for massive scale (1M+ agents).
+  </Step>
+</Steps>
+
+## Performance benchmarks
+
+Tested on AWS `c6i.4xlarge` (16 vCPU, 32 GB RAM):
+
+- **Concurrent calls**: 50
+- **Average latency (AI response)**: 1.2 seconds
+- **Average latency (TTS)**: 0.8 seconds
+- **RTP packet loss**: &lt;0.01%
+- **CPU utilization**: 65%
+- **Memory utilization**: 18 GB
+
+## Cloud provider recommendations
+
+### AWS
+
+**Recommended instance types:**
+- **Backend App**: `c6i.4xlarge` (compute-optimized)
+- **MongoDB**: `r6i.2xlarge` (memory-optimized)
+- **Redis**: `r6g.xlarge` (ARM, memory-optimized)
+
+### Google Cloud
+
+**Recommended instance types:**
+- **Backend App**: `c2-standard-16`
+- **MongoDB**: `n2-highmem-16`
+- **Redis**: `e2-highmem-8`
+
+### Azure
+
+**Recommended instance types:**
+- **Backend App**: `F16s_v2`
+- **MongoDB**: `E16s_v5`
+- **Redis**: `D8s_v5`
+
+### Bare metal / On-premise
+
+**Recommended specifications:**
+- **Processor**: Intel Xeon Scalable (Ice Lake or newer) or AMD EPYC
+- **RAM**: ECC DDR4-3200 or faster
+- **Storage**: NVMe SSDs with high IOPS
+- **Network**: 10 Gbps network cards with SR-IOV support
+
+## Security requirements
+
+<CardGroup cols={2}>
+  <Card title="TLS/SSL certificates" icon="lock">
+    Required for HTTPS and secure WebRTC connections
+  </Card>
+  <Card title="Firewall" icon="shield">
+    iptables/nftables or cloud security groups configured
+  </Card>
+  <Card title="SSH hardening" icon="key">
+    Key-based authentication, disable password login
+  </Card>
+  <Card title="Monitoring" icon="chart-line">
+    Prometheus, Grafana, or cloud-native monitoring
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Self-hosting guide" icon="server" href="/deployment/self-hosting">
+    Follow the step-by-step installation instructions
+  </Card>
+  <Card title="Configuration reference" icon="gear" href="/deployment/configuration">
+    Detailed configuration options for all services
+  </Card>
+</CardGroup>

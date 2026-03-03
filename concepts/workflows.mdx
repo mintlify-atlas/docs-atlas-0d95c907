@@ -1,0 +1,608 @@
+---
+title: Workflows
+description: Deterministic action flows that bring predictable business logic to AI conversations
+---
+
+Workflows are deterministic action flows that execute business logic predictably within your scripts. While AI handles natural conversation, workflows ensure that critical operations—like calculations, conditional routing, data validation, and API calls—happen exactly as programmed, every single time.
+
+## Why workflows matter
+
+AI is probabilistic. It generates different responses, interprets inputs creatively, and sometimes makes mistakes. This is great for natural conversation but terrible for business-critical operations.
+
+Workflows solve this by providing a **deterministic execution layer** that runs alongside AI conversations:
+
+- **Predictable**: Same input always produces same output
+- **Auditable**: Every step is logged and traceable
+- **Reliable**: No hallucinations, no guessing, no errors
+- **Testable**: Can be validated with unit tests
+
+<Note>
+Think of workflows as the "business rules engine" embedded directly in your conversational AI. The AI talks, the workflow executes.
+</Note>
+
+## Workflow vs AI logic
+
+Understanding when to use each is critical:
+
+| Task | Use Workflow | Use AI |
+|------|--------------|--------|
+| Calculate total price | ✅ Always | ❌ Never |
+| Validate email format | ✅ Always | ❌ Never |
+| Route based on account type | ✅ Always | ❌ Never |
+| Extract user intent | ❌ Never | ✅ Always |
+| Generate natural response | ❌ Never | ✅ Always |
+| Understand user emotion | ❌ Never | ✅ Always |
+| Call payment API with exact parameters | ✅ Always | ❌ Never |
+| Decide if user sounds urgent | ❌ Never | ✅ Always |
+
+**The rule of thumb:** If it's a business rule that must be correct 100% of the time, use a workflow.
+
+## Workflow components
+
+Workflows in Iqra AI are built using **System Tool Nodes** and **FlowApp Nodes** connected with conditional edges:
+
+### Conditional routing
+
+Routes conversation based on variable values:
+
+```
+[Check Account Type Variable]
+         ↓          ↓          ↓
+   [Premium]   [Standard]  [Trial]
+         ↓          ↓          ↓
+ [VIP Flow]  [Normal Flow] [Limited Flow]
+```
+
+This is deterministic—if `account_type = "Premium"`, it **always** goes to the VIP flow.
+
+### Mathematical operations
+
+Perform calculations before calling tools or making decisions:
+
+```yaml
+# Example: Calculate appointment price
+
+Variable: base_price = 100
+Variable: is_member = true
+Variable: service_duration = 60
+
+Workflow:
+  1. If service_duration > 30:
+       price_multiplier = 1.5
+  2. If is_member == true:
+       discount = 0.15
+  3. final_price = base_price * price_multiplier * (1 - discount)
+  4. Set variable.total_price = final_price
+```
+
+In Iqra AI, you implement this using:
+- **Variables** to store values
+- **FlowApp nodes** for complex math
+- **Conditional edges** to route based on calculations
+
+### Data validation
+
+Ensure data meets requirements before processing:
+
+```
+[User Provides Email]
+         ↓
+[Validate Email Format Node]
+         ↓          ↓
+    [valid]    [invalid]
+         ↓          ↓
+  [Continue]  [Ask Again + Retry Counter++]
+```
+
+**Implementation using DTMF example:**
+
+```yaml
+Node: DTMF PIN Collection
+  MaxLength: 4
+  Timeout: 10000
+  EncryptInput: true
+  
+Outcomes:
+  - Value: "Success"
+    PortId: "valid_port" → Continue to verification
+    
+  - Value: "Timeout"
+    PortId: "retry_port" → Increment retry counter
+    
+  - Value: "Invalid"
+    PortId: "retry_port" → Increment retry counter
+```
+
+### Retry logic
+
+Handle failures gracefully with controlled retries:
+
+```
+[Attempt API Call]
+         ↓
+  [Success?]
+    ↙        ↘
+[Yes]        [No]
+  ↓            ↓
+[Continue] [Retry Counter < 3?]
+              ↙          ↘
+           [Yes]        [No]
+             ↓            ↓
+      [Wait 2s]    [Escalate to Human]
+             ↓
+      [Loop back to Attempt]
+```
+
+**Implementation pattern:**
+
+```yaml
+Variables:
+  - retry_count:
+      Type: Number
+      DefaultValue: 0
+      IsEditableByAI: false
+      
+  - max_retries:
+      Type: Number
+      DefaultValue: 3
+      IsEditableByAI: false
+
+Workflow:
+  1. [FlowApp: Call External API]
+  2. If success_port → Continue
+  3. If failure_port:
+       a. Increment retry_count
+       b. If retry_count < max_retries:
+            → Go back to step 1
+       c. Else:
+            → Transfer to human agent
+```
+
+<Warning>
+Always set maximum retry limits. Infinite loops will cause conversation hangs and poor user experience.
+</Warning>
+
+## System tools for workflows
+
+Iqra AI provides built-in system tools designed for deterministic operations:
+
+### Go To Node
+
+Jumps to a specific node in the script:
+
+```csharp
+public class BusinessAppScriptGoToNodeToolNode : BusinessAppScriptSystemToolNode
+{
+    public string TargetNodeId { get; set; }
+}
+```
+
+**Use cases:**
+- Loop back to retry failed operations
+- Jump to different sections based on user type
+- Restart flows after corrections
+
+**Example: Retry loop**
+
+```
+[Collect Payment Info] (Node ID: "payment_input")
+         ↓
+[Validate Payment]
+    ↙         ↘
+[Valid]     [Invalid]
+  ↓            ↓
+[Charge]  [Go To Node: "payment_input"]
+```
+
+### End Call
+
+Terminates conversation with optional message:
+
+```csharp
+public class BusinessAppScriptEndCallToolNode : BusinessAppScriptSystemToolNode
+{
+    public BusinessAppAgentScriptEndCallTypeENUM Type { get; set; }  // Immediate or AfterMessage
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string>? Messages { get; set; }
+}
+```
+
+**Use cases:**
+- End conversation after successful completion
+- Terminate after max retry failures
+- Exit if user says "cancel" or "stop"
+
+**Example: Conditional termination**
+
+```
+[Check Retry Count]
+         ↓
+[retry_count >= 3]
+    ↙         ↘
+[True]      [False]
+  ↓            ↓
+[End Call:    [Continue]
+ "Sorry, unable
+  to process."]
+```
+
+### Transfer to Agent
+
+Hands conversation to another agent:
+
+```csharp
+public class BusinessAppScriptTransferToAgentToolNode : BusinessAppScriptSystemToolNode
+{
+    public string TargetAgentId { get; set; }
+}
+```
+
+**Use cases:**
+- Escalate complex issues to specialized agents
+- Route to language-specific agents
+- Transfer to human agents for sensitive matters
+
+**Example: Language routing**
+
+```
+[Detect User Language]
+      ↓         ↓        ↓
+ [English]  [Arabic] [Other]
+      ↓         ↓        ↓
+[Continue] [Transfer:  [Transfer:
+          Arabic Agent] Multilingual
+                        Support]
+```
+
+### Add Script to Context
+
+Loads additional capabilities:
+
+```csharp
+public class BusinessAppScriptAddScriptToContextToolNode : BusinessAppScriptSystemToolNode
+{
+    public string TargetScriptId { get; set; }
+}
+```
+
+**Use cases:**
+- Add payment flow to booking flow
+- Load verification script when needed
+- Enable additional capabilities mid-conversation
+
+**Example: Dynamic capability loading**
+
+```
+[User wants to pay now?]
+         ↓
+  [Yes or No]
+    ↙        ↘
+[Yes]        [No]
+  ↓            ↓
+[Add Script:  [Continue without
+ "Payment      payment capability]
+  Collection"]
+  ↓
+[Continue with both
+ booking + payment]
+```
+
+### Send SMS
+
+Sends text messages deterministically:
+
+```csharp
+public class BusinessAppScriptSendSMSToolNode : BusinessAppScriptSystemToolNode
+{
+    public string PhoneNumber { get; set; }  // Can use variables: {{ variables.user_phone }}
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Message { get; set; }
+}
+```
+
+**Use cases:**
+- Send confirmation after booking
+- Deliver verification codes
+- Provide appointment reminders
+
+**Example: Booking confirmation**
+
+```yaml
+Node: Send Confirmation SMS
+  PhoneNumber: "{{ variables.user_phone }}"
+  Message:
+    English: "Your appointment on {{ variables.appointment_date }} at {{ variables.appointment_time }} is confirmed. See you then!"
+```
+
+### Retrieve Knowledge Base
+
+Searches vector database deterministically:
+
+```csharp
+public class BusinessAppScriptRetrieveKnowledgeBaseNode : BusinessAppScriptSystemToolNode
+{
+    public string Query { get; set; }  // Can use variables
+    public int MaxResults { get; set; }
+    public double SimilarityThreshold { get; set; }
+}
+```
+
+**Use cases:**
+- Find specific policy information
+- Retrieve product details
+- Look up FAQs
+
+**Example: Policy lookup**
+
+```yaml
+Node: Find Return Policy
+  Query: "{{ variables.product_name }} return policy"
+  MaxResults: 3
+  SimilarityThreshold: 0.75
+  
+Output: Stores results in context for AI to use
+```
+
+## FlowApps as workflow components
+
+FlowApps execute external integrations deterministically:
+
+```csharp
+public class BusinessAppScriptFlowAppNode : BusinessAppScriptNode
+{
+    public string AppKey { get; set; }           // e.g., "cal_com"
+    public string ActionKey { get; set; }        // e.g., "book_meeting"
+    public List<FlowAppNodeInput> Inputs { get; set; }
+}
+```
+
+### Example: Multi-step booking workflow
+
+```
+1. [AI: Collect appointment preferences]
+         ↓
+2. [FlowApp: Cal.com - Check Availability]
+    Input: date = {{ variables.preferred_date }}
+    Input: service = {{ variables.service_type }}
+         ↓          ↓
+   [available]  [unavailable]
+         ↓          ↓
+3a. [FlowApp:     3b. [AI: Suggest alternatives]
+     Book Meeting]          ↓
+         ↓             [Go To: Step 2]
+4. [Set variable.booking_id = output.id]
+         ↓
+5. [FlowApp: Send confirmation email]
+    Input: booking_id = {{ variables.booking_id }}
+         ↓
+6. [Send SMS confirmation]
+         ↓
+7. [End Call: "You're all set!"]
+```
+
+Every step executes in order, with deterministic error handling.
+
+## Advanced workflow patterns
+
+### State machine workflows
+
+Implement complex state machines:
+
+```yaml
+States:
+  - INITIAL: Greet user
+  - AUTHENTICATED: User verified
+  - BROWSING: Looking at options
+  - CART: Items selected
+  - PAYMENT: Processing payment
+  - COMPLETED: Transaction done
+
+Transitions:
+  INITIAL → AUTHENTICATED: If PIN valid
+  AUTHENTICATED → BROWSING: User says "show me options"
+  BROWSING → CART: User says "I want that"
+  CART → PAYMENT: User says "checkout"
+  PAYMENT → COMPLETED: Payment success
+  
+  # Error transitions
+  PAYMENT → CART: Payment failed
+  AUTHENTICATED → INITIAL: Session timeout
+```
+
+Implement using:
+- Variable `current_state`
+- Conditional edges based on state
+- Go To Node for transitions
+
+### Multi-API orchestration
+
+Coordinate multiple services:
+
+```
+1. [FlowApp: CRM - Get Customer Data]
+         ↓
+2. [Store: variables.customer_tier]
+         ↓
+3. [If tier == "VIP"]
+         ↓
+4. [FlowApp: Cal.com - Get VIP Slots]
+         ↓
+5. [FlowApp: Stripe - Check Payment Method]
+         ↓        ↓
+    [has method] [no method]
+         ↓        ↓
+6. [Book + Charge] [Collect Payment Info]
+         ↓
+7. [FlowApp: SendGrid - Email Confirmation]
+         ↓
+8. [FlowApp: CRM - Log Interaction]
+```
+
+### Compliance workflows
+
+Ensure regulatory compliance:
+
+```yaml
+PCI-DSS Payment Collection:
+  1. [AI: Inform about secure payment]
+  2. [DTMF: Collect card number (encrypted)]
+     IsVisibleToAgent: false  # AI never sees it
+  3. [DTMF: Collect CVV (encrypted)]
+     IsVisibleToAgent: false
+  4. [DTMF: Collect expiry (encrypted)]
+     IsVisibleToAgent: false
+  5. [FlowApp: Payment Gateway]
+     # Encrypted data sent directly to gateway
+  6. [If success]:
+     a. Clear all payment variables
+     b. Log transaction ID only
+     c. Continue
+  7. [If failure]:
+     a. Clear all payment variables
+     b. Log failure (no sensitive data)
+     c. Retry or escalate
+```
+
+<Info>
+Iqra AI's Secure Sessions feature creates a "clean room" for sensitive data. The workflow processes it deterministically while keeping it hidden from the AI layer.
+</Info>
+
+### Timeout and fallback workflows
+
+Handle unresponsive users:
+
+```
+[AI: Ask question]
+       ↓
+[Wait for response]
+       ↓
+[Timeout after 10 seconds?]
+    ↙         ↘
+[Yes]        [No → Process response]
+  ↓
+[Increment timeout_count]
+  ↓
+[timeout_count < 2?]
+    ↙         ↘
+[Yes]        [No]
+  ↓            ↓
+[AI: Repeat   [End Call:
+ question in   "No response
+ simpler way]  detected"]
+  ↓
+[Loop back]
+```
+
+## Best practices
+
+### Always handle failure paths
+
+Every FlowApp or system tool can fail:
+
+```
+[Call External API]
+    ↙         ↘
+[success]   [failure]
+  ↓           ↓
+[Continue] [Log error + Retry or Fail gracefully]
+```
+
+Never assume success.
+
+### Use variables to track state
+
+```yaml
+# Good: Track workflow progress
+workflow_step: "payment_collection"  # Know where you are
+retry_count: 2                        # Know how many attempts
+last_error: "Payment gateway timeout" # Know what went wrong
+
+# Bad: No state tracking
+# If something fails, you don't know where or why
+```
+
+### Keep workflows simple
+
+If your workflow looks like spaghetti, break it into multiple scripts:
+
+```yaml
+# Instead of one mega-workflow:
+"Handle Everything Script" (200 nodes) ❌
+
+# Use multiple focused scripts:
+"Verify Identity Script" (20 nodes) ✅
+"Collect Payment Script" (25 nodes) ✅
+"Book Appointment Script" (30 nodes) ✅
+"Send Confirmations Script" (15 nodes) ✅
+```
+
+Use "Add Script" nodes to compose them.
+
+### Document complex logic
+
+Use node descriptions to explain why:
+
+```yaml
+Node Name: "Check if retry count exceeds 3"
+Description: "Per compliance policy SEC-2024-03, we must limit 
+             retry attempts to prevent account lockouts."
+```
+
+### Test edge cases
+
+Don't just test the happy path:
+
+- What if the API times out?
+- What if the user provides invalid data 5 times?
+- What if two FlowApps conflict?
+- What if the user hangs up mid-workflow?
+
+### Use meaningful variable names
+
+```yaml
+# Good
+user_verified_at_timestamp
+max_allowed_retry_attempts
+total_price_including_tax
+
+# Bad
+flag1
+temp_val
+x
+```
+
+Your future self will thank you.
+
+## Workflows vs traditional automation
+
+How is this different from tools like Zapier or n8n?
+
+| Feature | Iqra AI Workflows | Traditional Automation |
+|---------|-------------------|------------------------|
+| **Triggered by** | Conversation flow | Events/webhooks |
+| **Context** | Has full conversation state | Isolated execution |
+| **User interaction** | Can ask follow-up questions | No user interaction |
+| **AI integration** | Native AI decision-making | Requires custom logic |
+| **Real-time** | Sub-second latency | Seconds to minutes |
+| **Voice-aware** | Handles interruptions, DTMF | Not voice-capable |
+
+**Iqra AI workflows** are conversational automation—they run while the user is on the phone or in the chat, with full access to conversation history and the ability to ask clarifying questions.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build action flows" icon="arrows-split-up-and-left" href="/build/script/action-flows">
+    Hands-on guide to building deterministic workflows
+  </Card>
+  <Card title="FlowApps" icon="plug" href="/developers/flowapp">
+    Build custom integrations as reusable workflow components
+  </Card>
+  <Card title="Secure sessions" icon="lock" href="/build/script/secure-sessions">
+    Handle sensitive data in compliant workflows
+  </Card>
+  <Card title="System tools" icon="wrench" href="/build/tools">
+    Complete reference for built-in workflow tools
+  </Card>
+</CardGroup>

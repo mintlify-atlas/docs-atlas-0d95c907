@@ -1,0 +1,102 @@
+---
+title: Introduction to Iqra AI
+description: Build superhuman voice and conversational agents that think dynamically but act systematically
+---
+
+<Note>
+  In the name of Allah, the Most Gracious, the Most Merciful. To Whom belongs all thanks.
+</Note>
+
+# Introduction to Iqra AI
+
+**Iqra AI** is an orchestration infrastructure designed to bridge the gap between the chaos of LLMs and the reliability of business code. Build superhuman voice and conversational agents that think dynamically but act systematically.
+
+Unlike standard "wrappers," Iqra AI provides a **Deterministic Logic Layer** alongside the probabilistic nature of AI. We prioritize architecture over magic—giving you deep control over latency via multi-region routing, native multi-language support for cultural accuracy, and strict compliance tools for enterprise deployment.
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Get started with Iqra AI in minutes using Iqra Cloud or self-hosted deployment
+  </Card>
+  <Card title="Deployment options" icon="server" href="/deployment-options">
+    Choose between Iqra Cloud, self-hosted, or enterprise deployment
+  </Card>
+  <Card title="Visual IDE" icon="diagram-project" href="/building/visual-ide">
+    No-code graph-based editor with granular control over system prompts and variables
+  </Card>
+  <Card title="FlowApps system" icon="puzzle-piece" href="/developers/flowapp/overview">
+    Build and integrate plugins to extend agent capabilities
+  </Card>
+</CardGroup>
+
+## Key features
+
+### Visual IDE
+
+A **no-code** graph-based editor that doesn't sacrifice depth. While accessible to non-engineers, it exposes granular control over system prompts, variable states, and tool definitions. Orchestrate logic, configure intelligence, and debug conversations in a unified studio without context switching.
+
+### Deterministic logic
+
+Embed strict, step-by-step **workflows** directly into conversations. Similar to a visual automation engine running inside your agent, this layer handles conditional routing (if/else), loops, and math operations deterministically. The AI handles the conversation; the system handles the execution logic.
+
+### Native multilingual support
+
+Translation layers create double latency and lose cultural nuance. Iqra AI runs parallel logic stacks. An agent can switch from an English "Professional" persona (using Deepgram) to an Arabic "Hospitable" persona (using Azure Speech) instantly, mid-sentence, loading a completely different neural configuration.
+
+### Global edge network
+
+Designed for horizontal scaling. Deploy distinct instances of the **Iqra Proxy** and **Backend** in geographically disparate clusters (e.g., Kubernetes nodes in US-East vs. EU-Central). The system routes sessions to the nearest compute node to minimize RTP latency.
+
+### Deep integrations
+
+A modular **Bring Your Own Model (BYOM)** architecture. We provide native, optimized adapters for industry leaders (OpenAI, Azure, Gemini, Anthropic, Groq, ElevenLabs, Deepgram), but the abstract interface allows you to plug in custom fine-tuned models or local inference endpoints.
+
+### Secure sessions (PCI-DSS)
+
+Maintains control of private context. Our **Secure Sessions** feature creates a "Clean Room" for sensitive data collection. The audio/DTMF is processed by the deterministic engine via strict **get/set variable rules**. The AI never sees the raw digits, only the validation result, ensuring compliance with data privacy standards.
+
+### Omnichannel deployment
+
+One brain, many bodies. Deploy agents via standard SIP trunking (Twilio, Telnyx, Vonage) or bypass the PSTN entirely using our high-performance **WebRTC/WebSocket** gateway for browser and mobile app integration with sub-second latency.
+
+### Smart turn taking
+
+Full control over the interruption pipeline. The engine allows you to select between standard **VAD** (Voice Activity Detection), **ML-based** projection models, or **LLM-based** decision making to accurately distinguish between a pause, a backchannel ('uh-huh'), and a true barge-in.
+
+## Architecture
+
+Iqra AI is built on a "Bring Your Own Everything" architecture designed for technical scalability:
+
+- **IqraCore**: Entity layer containing all domain models
+- **IqraInfrastructure**: Business logic and service implementations
+- **IqraBackendApp**: Real-time audio processing and orchestration
+- **IqraProxy**: Multi-region routing and session management
+- **FlowApps**: Plugin system for external API integrations
+
+<Info>
+  Read the [System Architecture](/concepts/architecture) guide to understand the separation between components and how they interact.
+</Info>
+
+## Use cases
+
+- **Customer support**: Build intelligent voice agents that handle customer inquiries with natural conversation flow and deterministic business logic
+- **Sales automation**: Create outbound calling agents that qualify leads and book appointments
+- **Healthcare**: Deploy HIPAA-compliant voice assistants for patient intake and appointment scheduling
+- **Finance**: Build PCI-DSS compliant agents for secure payment processing and account inquiries
+- **Multilingual services**: Serve global customers with native language support and cultural awareness
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Deploy your first agent in minutes
+  </Card>
+  <Card title="Build your first script" icon="code" href="/building/visual-ide">
+    Learn how to create conversation flows
+  </Card>
+  <Card title="Add integrations" icon="plug" href="/build/tools">
+    Connect your agent to external services
+  </Card>
+  <Card title="Self-hosting guide" icon="server" href="/deployment/self-hosting">
+    Deploy Iqra AI on your own infrastructure
+  </Card>
+</CardGroup>

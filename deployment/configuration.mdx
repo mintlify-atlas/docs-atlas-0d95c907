@@ -1,0 +1,678 @@
+---
+title: Configuration reference
+description: Complete reference for all configuration options across Frontend, Proxy, Backend, and Processor services
+---
+
+This reference documents all configuration options for the four Iqra AI services. Each service uses an `appsettings.json` file for configuration.
+
+<Warning>
+  Some configuration blocks **must be identical** across all services (marked as "SHARED"). Mismatched values will cause communication failures between services.
+</Warning>
+
+## Configuration files
+
+Each service has its own configuration file:
+
+- `ProjectIqraFrontend/appsettings.json` - Dashboard and API
+- `ProjectIqraBackendProxy/appsettings.json` - Load balancer and SIP gateway
+- `ProjectIqraBackendApp/appsettings.json` - Core agent engine
+- `IqraBackgroundProcessor/appsettings.json` - Async processing
+
+Example files are provided as `appsettings.json.example` in each directory.
+
+## Frontend configuration
+
+### URL
+
+```json
+{
+  "URL": "https://app.iqra.bot"
+}
+```
+
+**Purpose:** The public URL where the dashboard is hosted (without trailing slash).
+
+**Used for:**
+- Email links (password resets, invitations)
+- Webhook URL generation
+- OAuth redirects
+
+### Hardware
+
+```json
+{
+  "Hardware": {
+    "NetworkInterfaceName": "eth0"
+  }
+}
+```
+
+<ParamField path="NetworkInterfaceName" type="string" required>
+  The OS-level name of the network interface for RTP audio (UDP) binding.
+  
+  **How to find:**
+  - Linux: `ip addr` (e.g., `eth0`, `ens5`, `ens160`)
+  - Windows: `ipconfig` (e.g., `"Ethernet"`, `"vEthernet (WSL)"`)
+</ParamField>
+
+### S3 Storage
+
+```json
+{
+  "S3Storage": {
+    "DefaultStorageRegionId": "us-east-1"
+  }
+}
+```
+
+<ParamField path="DefaultStorageRegionId" type="string" required>
+  The Region ID where default assets are stored. This must match a Region created in the Admin Dashboard under Infrastructure → Regions.
+  
+  **Used for:**
+  - Logo uploads
+  - Call recordings
+  - Document uploads for knowledge bases
+</ParamField>
+
+### Redis (SHARED)
+
+```json
+{
+  "RedisDatabase": {
+    "Endpoint": "localhost:6379",
+    "Password": ""
+  }
+}
+```
+
+<Warning>
+  This configuration **must be identical** across Frontend, Proxy, Backend, and Processor.
+</Warning>
+
+<ParamField path="Endpoint" type="string" required>
+  Redis connection endpoint in `host:port` format.
+</ParamField>
+
+<ParamField path="Password" type="string">
+  Redis authentication password. Leave empty (`""`) if no password is set.
+</ParamField>
+
+### MongoDB (SHARED)
+
+```json
+{
+  "MongoDatabase": {
+    "ConnectionString": "mongodb://localhost:27017"
+  }
+}
+```
+
+<Warning>
+  This configuration **must be identical** across all services.
+</Warning>
+
+<ParamField path="ConnectionString" type="string" required>
+  MongoDB connection string. Supports:
+  - Standalone: `mongodb://localhost:27017`
+  - Replica set: `mongodb://host1:27017,host2:27017,host3:27017/?replicaSet=rs0`
+  - Authentication: `mongodb://username:password@host:27017/dbname`
+</ParamField>
+
+### Milvus (SHARED)
+
+```json
+{
+  "Milvus": {
+    "Endpoint": "http://localhost:9091",
+    "Database": "iqra",
+    "Username": "root",
+    "Password": "Milvus",
+    "ExpiryCheckIntervalSeconds": 300,
+    "CollectionStaleTimeoutMinutes": 30
+  }
+}
+```
+
+<Warning>
+  This configuration **must be identical** across Frontend, Backend, and Processor.
+</Warning>
+
+<ParamField path="Endpoint" type="string" required>
+  HTTP URL for the Milvus vector database. Usually port `19530` (gRPC) or `9091` (HTTP).
+</ParamField>
+
+<ParamField path="Database" type="string" required>
+  Database name inside Milvus to store embeddings.
+</ParamField>
+
+<ParamField path="Username" type="string" required>
+  Milvus authentication username (default: `root`).
+</ParamField>
+
+<ParamField path="Password" type="string" required>
+  Milvus authentication password (default: `Milvus`).
+</ParamField>
+
+<ParamField path="ExpiryCheckIntervalSeconds" type="integer">
+  How often (in seconds) to check for expired vector collections. Default: `300` (5 minutes).
+</ParamField>
+
+<ParamField path="CollectionStaleTimeoutMinutes" type="integer">
+  Time (in minutes) before an unused collection is unloaded from memory. Default: `30`.
+</ParamField>
+
+### Unstructured
+
+```json
+{
+  "Unstructured": {
+    "EndPoint": "http://localhost:8741",
+    "ApiKey": "<your_api_key>"
+  }
+}
+```
+
+<ParamField path="EndPoint" type="string" required>
+  URL for the Unstructured.io ETL service used for parsing documents (PDFs, DOCX, etc.) for knowledge bases.
+  
+  **Options:**
+  - Self-hosted Docker container: `http://localhost:8741`
+  - Unstructured SaaS: `https://api.unstructured.io`
+</ParamField>
+
+<ParamField path="ApiKey" type="string">
+  API key for Unstructured service (required for SaaS version or secured containers).
+</ParamField>
+
+### Mail SMTP
+
+```json
+{
+  "MailSMTP": {
+    "Host": "smtp.sendgrid.net",
+    "Port": 587,
+    "Username": "apikey",
+    "Password": "SG.xxxxx",
+    "FromEmail": "noreply@iqra.bot",
+    "FromName": "Iqra AI"
+  }
+}
+```
+
+<ParamField path="Host" type="string" required>
+  SMTP server hostname (e.g., `smtp.sendgrid.net`, `smtp.gmail.com`, `smtp.mailgun.org`).
+</ParamField>
+
+<ParamField path="Port" type="integer" required>
+  SMTP port. Common values:
+  - `587` - STARTTLS (recommended)
+  - `465` - SSL
+  - `25` - Unencrypted (not recommended)
+</ParamField>
+
+<ParamField path="Username" type="string" required>
+  SMTP authentication username.
+</ParamField>
+
+<ParamField path="Password" type="string" required>
+  SMTP authentication password or API key.
+</ParamField>
+
+<ParamField path="FromEmail" type="string" required>
+  Email address for the "From" field in system emails.
+</ParamField>
+
+<ParamField path="FromName" type="string" required>
+  Display name for system emails.
+</ParamField>
+
+### Integrations (SHARED)
+
+```json
+{
+  "Integrations": {
+    "EncryptionKey": "<32-character-aes-key>"
+  }
+}
+```
+
+<Warning>
+  This key **must be identical** across all services. Losing this key makes encrypted data unrecoverable.
+</Warning>
+
+<ParamField path="EncryptionKey" type="string" required>
+  A 32-character AES key used to encrypt/decrypt third-party API keys stored in MongoDB (OpenAI, Twilio, ElevenLabs, etc.).
+  
+  **Generate with:**
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+### User API Keys (SHARED)
+
+```json
+{
+  "UserApiKeys": {
+    "ApiKeyEncryptionKey": "<api-key-encryption-key>",
+    "PayloadEncryptionKey": "<payload-encryption-key>"
+  }
+}
+```
+
+<Warning>
+  These keys **must be identical** across all services.
+</Warning>
+
+<ParamField path="ApiKeyEncryptionKey" type="string" required>
+  Encrypts platform API keys issued to users.
+  
+  **Generate with:**
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+<ParamField path="PayloadEncryptionKey" type="string" required>
+  Encrypts the payload/claims within API tokens.
+  
+  **Generate with:**
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+### User
+
+```json
+{
+  "User": {
+    "EmailHashPepper": "<random-string>"
+  }
+}
+```
+
+<ParamField path="EmailHashPepper" type="string" required>
+  A secret string appended to email addresses before hashing for secure lookups.
+  
+  **Generate with:**
+  ```bash
+  openssl rand -base64 16
+  ```
+</ParamField>
+
+### Forwarded Headers
+
+```json
+{
+  "ForwardedHeaders": {
+    "KnownProxies": [
+      "127.0.0.1"
+    ]
+  }
+}
+```
+
+<ParamField path="KnownProxies" type="array">
+  List of trusted proxy IP addresses that define `X-Forwarded-For` headers (e.g., Nginx, Cloudflare).
+  
+  **Example:**
+  ```json
+  "KnownProxies": [
+    "127.0.0.1",
+    "10.0.0.1",
+    "192.168.1.1"
+  ]
+  ```
+</ParamField>
+
+## Backend Proxy configuration
+
+### Proxy
+
+```json
+{
+  "Proxy": {
+    "Id": "<server-uuid>",
+    "RegionId": "us-east-1",
+    "ApiKey": "<cluster-api-secret>",
+    "OutboundProcessing": {
+      "PollingIntervalSeconds": 5,
+      "DbFetchBatchSize": 1000,
+      "ProcessingBatchSize": 70,
+      "ScheduleWindowMinutes": 1
+    }
+  }
+}
+```
+
+<ParamField path="Id" type="string" required>
+  Unique UUID for this Proxy instance, obtained from Admin Dashboard → Infrastructure → Servers.
+</ParamField>
+
+<ParamField path="RegionId" type="string" required>
+  Region identifier (e.g., `us-east-1`, `eu-central`) that this proxy serves.
+</ParamField>
+
+<ParamField path="ApiKey" type="string" required>
+  Cluster handshake token. Must match the "API Secret" entered in the Admin Dashboard when registering this server.
+</ParamField>
+
+<ParamField path="OutboundProcessing.PollingIntervalSeconds" type="integer">
+  How often (in seconds) the proxy checks for pending outbound calls. Default: `5`.
+</ParamField>
+
+<ParamField path="OutboundProcessing.DbFetchBatchSize" type="integer">
+  Maximum number of queued calls to fetch from database per polling cycle. Default: `1000`.
+</ParamField>
+
+<ParamField path="OutboundProcessing.ProcessingBatchSize" type="integer">
+  Number of calls to process concurrently within one batch. Default: `70`.
+</ParamField>
+
+<ParamField path="OutboundProcessing.ScheduleWindowMinutes" type="integer">
+  Lookahead window (in minutes) for scheduled calls. Default: `1`.
+</ParamField>
+
+### CORS
+
+```json
+{
+  "Cors": {
+    "AllowedOrigins": [
+      "https://app.iqra.bot"
+    ]
+  }
+}
+```
+
+<ParamField path="AllowedOrigins" type="array" required>
+  List of URLs allowed to make browser-based requests (WebRTC signaling). Include your Frontend dashboard URL.
+</ParamField>
+
+## Backend App configuration
+
+### Server
+
+```json
+{
+  "Server": {
+    "Id": "<server-uuid>",
+    "RegionId": "us-east-1",
+    "ExpectedMaxConcurrentCalls": 25,
+    "ApiKey": "<cluster-api-secret>",
+    "WebhookTokenSecret": "<webhook-signing-key>"
+  }
+}
+```
+
+<ParamField path="Id" type="string" required>
+  Unique UUID obtained from Admin Dashboard → Infrastructure → Servers.
+</ParamField>
+
+<ParamField path="RegionId" type="string" required>
+  Region identifier this server belongs to.
+</ParamField>
+
+<ParamField path="ExpectedMaxConcurrentCalls" type="integer" required>
+  Maximum number of simultaneous calls before the Proxy stops routing new traffic to this server.
+</ParamField>
+
+<ParamField path="ApiKey" type="string" required>
+  Cluster handshake token matching the Admin Dashboard configuration.
+</ParamField>
+
+<ParamField path="WebhookTokenSecret" type="string" required>
+  Random string used to sign webhook payloads for security verification.
+  
+  **Generate with:**
+  ```bash
+  openssl rand -base64 32
+  ```
+</ParamField>
+
+### Hardware
+
+```json
+{
+  "Hardware": {
+    "NetworkInterfaceName": "eth0",
+    "MaxNetworkDownloadMbps": 200,
+    "MaxNetworkUploadMbps": 50
+  }
+}
+```
+
+<ParamField path="NetworkInterfaceName" type="string" required>
+  OS-level network interface name for RTP audio binding. See [Frontend Hardware](#hardware) for details.
+</ParamField>
+
+<ParamField path="MaxNetworkDownloadMbps" type="integer">
+  Estimated download bandwidth available (used for capacity planning). Default: `200`.
+</ParamField>
+
+<ParamField path="MaxNetworkUploadMbps" type="integer">
+  Estimated upload bandwidth available (used for capacity planning). Default: `50`.
+</ParamField>
+
+### Local Redis (Backend App only)
+
+```json
+{
+  "LocalRedisDatabase": {
+    "ConnectionString": "127.0.0.1:6379",
+    "TTSAudioCacheIndex": 14
+  }
+}
+```
+
+<Note>
+  The Backend App requires a **separate local Redis instance** running on the same machine for L1 TTS audio caching to minimize latency.
+</Note>
+
+<ParamField path="ConnectionString" type="string" required>
+  Local Redis connection (should be `127.0.0.1` for best performance).
+</ParamField>
+
+<ParamField path="TTSAudioCacheIndex" type="integer">
+  Redis database index for TTS cache. Default: `14`.
+</ParamField>
+
+## Background Processor configuration
+
+### Security
+
+```json
+{
+  "Security": {
+    "ApiKey": "<api-key>"
+  }
+}
+```
+
+<ParamField path="ApiKey" type="string" required>
+  Cluster handshake token matching the Admin Dashboard configuration.
+</ParamField>
+
+### S3 Storage
+
+```json
+{
+  "S3Storage": {
+    "DefaultStorageRegionId": "us-east-1"
+  }
+}
+```
+
+<ParamField path="DefaultStorageRegionId" type="string" required>
+  Must match the `DefaultStorageRegionId` in the Frontend configuration.
+</ParamField>
+
+## Shared configuration blocks
+
+These sections **must be identical** across all services:
+
+<CardGroup cols={2}>
+  <Card title="RedisDatabase" icon="database">
+    Connection to shared Redis instance
+  </Card>
+  <Card title="MongoDatabase" icon="database">
+    Connection to MongoDB
+  </Card>
+  <Card title="Milvus" icon="database">
+    Vector database configuration
+  </Card>
+  <Card title="Integrations" icon="key">
+    Encryption key for third-party API keys
+  </Card>
+</CardGroup>
+
+## Environment-specific configuration
+
+### Development
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Debug",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*"
+}
+```
+
+### Production
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore": "Warning"
+    }
+  },
+  "AllowedHosts": "app.yourdomain.com"
+}
+```
+
+## Security best practices
+
+<Steps>
+  <Step title="Use strong encryption keys">
+    Generate all encryption keys with `openssl rand -base64 32`. Never use predictable strings.
+  </Step>
+  
+  <Step title="Rotate keys periodically">
+    Plan for key rotation. Store old keys for decrypting legacy data.
+  </Step>
+  
+  <Step title="Secure configuration files">
+    Set file permissions to `600` (owner read/write only):
+    ```bash
+    chmod 600 appsettings.json
+    ```
+  </Step>
+  
+  <Step title="Use environment variables for secrets">
+    Override sensitive settings with environment variables:
+    ```bash
+    export MongoDatabase__ConnectionString="mongodb://..."
+    export Integrations__EncryptionKey="..."
+    ```
+  </Step>
+  
+  <Step title="Never commit secrets to Git">
+    Add `appsettings.json` to `.gitignore`. Only commit `appsettings.json.example`.
+  </Step>
+</Steps>
+
+## Configuration validation
+
+Validate your configuration before deploying:
+
+<CodeGroup>
+```bash Linux
+# Check configuration syntax
+dotnet run --project ProjectIqraFrontend --configuration Release --dry-run
+
+# Verify database connections
+mongo --eval "db.adminCommand('ping')" $MONGODB_URI
+redis-cli -h localhost -p 6379 ping
+```
+
+```powershell Windows
+# Check configuration
+dotnet run --project ProjectIqraFrontend --configuration Release --dry-run
+
+# Test connections
+Test-NetConnection -ComputerName localhost -Port 27017
+Test-NetConnection -ComputerName localhost -Port 6379
+```
+</CodeGroup>
+
+## Troubleshooting
+
+### Services can't connect to databases
+
+<AccordionGroup>
+  <Accordion title="MongoDB connection failed">
+    **Symptoms:** `MongoConnectionException` or timeout errors
+    
+    **Solutions:**
+    - Verify connection string format
+    - Check MongoDB is running: `sudo systemctl status mongod`
+    - Test connection: `mongo mongodb://localhost:27017`
+    - Ensure firewall allows port 27017
+  </Accordion>
+  
+  <Accordion title="Redis connection failed">
+    **Symptoms:** `RedisConnectionException` or `NOAUTH` errors
+    
+    **Solutions:**
+    - Verify Redis is running: `sudo systemctl status redis`
+    - Test connection: `redis-cli ping`
+    - Check password if authentication is enabled
+    - Ensure firewall allows port 6379
+  </Accordion>
+  
+  <Accordion title="Milvus connection failed">
+    **Symptoms:** `MilvusException` or timeout errors
+    
+    **Solutions:**
+    - Verify Milvus is running: `docker ps | grep milvus`
+    - Check endpoint URL (HTTP port is usually 9091, not 19530)
+    - Test connection: `curl http://localhost:9091/health`
+    - Verify username/password if authentication is enabled
+  </Accordion>
+</AccordionGroup>
+
+### Encryption key mismatch
+
+**Symptoms:** `CryptographicException` or "invalid padding" errors
+
+**Cause:** The `Integrations.EncryptionKey` differs between services.
+
+**Solution:** Ensure the exact same key is used in all four `appsettings.json` files.
+
+### Network interface not found
+
+**Symptoms:** `NetworkInterfaceNotFoundException` or "No such device"
+
+**Solution:**
+- Linux: Run `ip addr` and use the exact interface name (e.g., `eth0`)
+- Windows: Run `ipconfig` and use the exact adapter name (e.g., `"Ethernet"`)
+- Ensure the interface is active and has an IP address
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Self-hosting guide" icon="server" href="/deployment/self-hosting">
+    Complete installation walkthrough
+  </Card>
+  <Card title="System requirements" icon="microchip" href="/deployment/requirements">
+    Hardware and dependency specifications
+  </Card>
+</CardGroup>

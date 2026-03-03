@@ -1,0 +1,340 @@
+---
+title: Agent configuration
+description: Configure agent personality, integrations, and behavior settings
+---
+
+Agents in Iqra AI are highly configurable entities that combine AI intelligence with deterministic control. This guide covers all configuration options available when building your agent.
+
+## Agent structure
+
+Each agent consists of several configuration sections:
+
+```
+BusinessAppAgent
+├── General          # Name, emoji, description
+├── Context          # Business data visibility
+├── Personality      # AI character and behavior
+├── Utterances       # Opening and closing messages
+├── Interruptions    # Turn-taking behavior
+├── KnowledgeBase    # RAG configuration
+├── Integrations     # LLM, STT, TTS providers
+├── Cache            # Performance optimization
+└── Settings         # Background audio and misc
+```
+
+## General settings
+
+Basic agent metadata displayed in the UI.
+
+<ParamField path="Emoji" type="string" default="🤖">
+  Visual identifier for the agent (single emoji)
+</ParamField>
+
+<ParamField path="Name" type="object" required>
+  Multi-language agent name
+  
+  ```json
+  {
+    "en": "Customer Support Agent",
+    "ar": "وكيل دعم العملاء"
+  }
+  ```
+</ParamField>
+
+<ParamField path="Description" type="object">
+  Multi-language description of agent purpose
+</ParamField>
+
+## Context settings
+
+Control which business data is automatically injected into the agent's system prompt.
+
+<ParamField path="UseBranding" type="boolean" default="true">
+  Include company branding information
+</ParamField>
+
+<ParamField path="UseBranches" type="boolean" default="true">
+  Include branch locations and details
+</ParamField>
+
+<ParamField path="UseServices" type="boolean" default="true">
+  Include service catalog information
+</ParamField>
+
+<ParamField path="UseProducts" type="boolean" default="true">
+  Include product catalog information
+</ParamField>
+
+<Tip>
+Disable context features that aren't relevant to reduce token usage and improve response latency.
+</Tip>
+
+## Personality
+
+Define your agent's character and behavioral guidelines. All fields support multi-language configuration.
+
+<ParamField path="Name" type="object">
+  The agent's persona name (e.g., "Sarah the Support Specialist")
+</ParamField>
+
+<ParamField path="Role" type="object">
+  What the agent does
+  
+  ```json
+  {
+    "en": "A helpful customer service representative for an e-commerce company"
+  }
+  ```
+</ParamField>
+
+<ParamField path="Capabilities" type="object">
+  List of what the agent can do
+  
+  ```json
+  {
+    "en": [
+      "Answer questions about products and pricing",
+      "Process returns and exchanges",
+      "Schedule delivery appointments"
+    ]
+  }
+  ```
+</ParamField>
+
+<ParamField path="Ethics" type="object">
+  Behavioral guidelines and restrictions
+  
+  ```json
+  {
+    "en": [
+      "Never share customer data with third parties",
+      "Always verify identity before processing refunds",
+      "Escalate to human for complex complaints"
+    ]
+  }
+  ```
+</ParamField>
+
+<ParamField path="Tone" type="object">
+  Communication style directives
+  
+  ```json
+  {
+    "en": [
+      "Professional but friendly",
+      "Patient with confused customers",
+      "Concise responses under 3 sentences"
+    ],
+    "ar": [
+      "محترم ومهذب",
+      "صبور مع العملاء",
+      "إجابات مختصرة"
+    ]
+  }
+  ```
+</ParamField>
+
+<Note>
+Well-defined personality traits dramatically improve conversation quality. Be specific about tone, capabilities, and ethical boundaries.
+</Note>
+
+## Utterances
+
+Configure opening and closing messages.
+
+<ParamField path="OpeningType" type="enum">
+  How the conversation begins:
+  
+  - `None` - Wait for user to speak first
+  - `Static` - Predefined greeting
+  - `Dynamic` - AI-generated based on context
+</ParamField>
+
+<ParamField path="OpeningMessage" type="object">
+  Multi-language static opening (if OpeningType is Static)
+  
+  ```json
+  {
+    "en": "Hello! Thank you for calling. How may I assist you today?"
+  }
+  ```
+</ParamField>
+
+<ParamField path="ClosingMessage" type="object">
+  Multi-language closing message
+</ParamField>
+
+## Interruptions
+
+Configure turn-taking and barge-in behavior. See [Interruptions](/building/interruptions) for detailed configuration.
+
+<ParamField path="UseTurnByTurnMode" type="boolean" default="false">
+  Enable strict turn-taking (no barge-in allowed)
+</ParamField>
+
+<ParamField path="TurnEnd" type="object" required>
+  Configuration for detecting when user has finished speaking
+</ParamField>
+
+<ParamField path="PauseTrigger" type="object">
+  Optional: Pause agent speech when user starts talking
+</ParamField>
+
+<ParamField path="Verification" type="object">
+  Optional: Use LLM to verify if interruption is intentional
+</ParamField>
+
+## Knowledge base
+
+Configure RAG (Retrieval Augmented Generation) for your agent.
+
+<ParamField path="Enabled" type="boolean" default="false">
+  Enable knowledge base integration
+</ParamField>
+
+<ParamField path="SearchStrategy" type="enum">
+  When to retrieve knowledge:
+  
+  - `OnEveryQuery` - Search on every user message
+  - `OnDemand` - Only when AI requests it via tool
+  - `Hybrid` - Combination approach
+</ParamField>
+
+<ParamField path="TopK" type="integer" default="5">
+  Number of relevant chunks to retrieve
+</ParamField>
+
+<ParamField path="ScoreThreshold" type="number">
+  Minimum similarity score (0.0 - 1.0)
+</ParamField>
+
+<ParamField path="Refinement" type="object">
+  Optional: Use LLM to refine and summarize retrieved chunks
+</ParamField>
+
+## Integrations
+
+Connect your AI service providers. Iqra AI follows a "Bring Your Own Model" architecture.
+
+<ParamField path="LLM" type="object" required>
+  Language model configuration
+  
+  Supported providers:
+  - OpenAI (GPT-4, GPT-3.5)
+  - Azure OpenAI
+  - Anthropic (Claude)
+  - Google (Gemini)
+  - Groq
+  - Custom endpoints
+</ParamField>
+
+<ParamField path="STT" type="object" required>
+  Speech-to-Text configuration
+  
+  Supported providers:
+  - Deepgram
+  - Azure Speech
+  - Google Speech
+  - AssemblyAI
+</ParamField>
+
+<ParamField path="TTS" type="object" required>
+  Text-to-Speech configuration
+  
+  Supported providers:
+  - ElevenLabs
+  - Azure Speech
+  - Google TTS
+  - OpenAI TTS
+  - PlayHT
+</ParamField>
+
+<Warning>
+Different languages may require different STT/TTS providers for optimal quality. Configure language-specific integrations for best results.
+</Warning>
+
+## Cache
+
+Optimize performance with intelligent caching.
+
+### Audio caching
+
+<ParamField path="AutoCacheAudio.Enabled" type="boolean" default="false">
+  Automatically cache repeated TTS outputs
+</ParamField>
+
+<ParamField path="AutoCacheAudio.MinRepetitions" type="integer" default="3">
+  Cache after N identical generations
+</ParamField>
+
+### Embeddings caching
+
+<ParamField path="AutoCacheEmbeddings.Enabled" type="boolean" default="false">
+  Cache vector embeddings for knowledge base
+</ParamField>
+
+<Tip>
+Enable audio caching for static responses like greetings and confirmations to reduce latency and API costs.
+</Tip>
+
+## Settings
+
+### Background audio
+
+<ParamField path="BackgroundAudioS3StorageLink" type="object">
+  S3 link to background music/ambience file
+</ParamField>
+
+<ParamField path="BackgroundAudioVolume" type="integer">
+  Volume level (0-100)
+</ParamField>
+
+## References
+
+Agents can be deployed to multiple channels:
+
+- **InboundRoutingReferences** - Phone numbers for SIP inbound calls
+- **TelephonyCampaignReferences** - Outbound calling campaigns
+- **WebCampaignReferences** - WebRTC/WebSocket deployments
+
+These are managed automatically when you assign agents to routes and campaigns.
+
+## Configuration best practices
+
+<Steps>
+  <Step title="Start minimal">
+    Begin with basic personality and required integrations. Add complexity as needed.
+  </Step>
+  
+  <Step title="Test personality changes">
+    Small changes in tone or ethics can dramatically affect behavior. Test thoroughly.
+  </Step>
+  
+  <Step title="Match integrations to language">
+    Use native-language models when possible (e.g., Azure for Arabic, Deepgram for English).
+  </Step>
+  
+  <Step title="Monitor costs">
+    Knowledge base and LLM verification add API calls. Balance quality with budget.
+  </Step>
+  
+  <Step title="Version control descriptions">
+    Keep agent descriptions updated as capabilities evolve.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Visual IDE" href="/building/visual-ide" icon="diagram-project">
+    Build conversation scripts visually
+  </Card>
+  
+  <Card title="Interruptions" href="/building/interruptions" icon="hand">
+    Configure advanced turn-taking
+  </Card>
+  
+  <Card title="Integrations" href="/integrations/overview" icon="puzzle-piece">
+    Connect AI service providers
+  </Card>
+</CardGroup>

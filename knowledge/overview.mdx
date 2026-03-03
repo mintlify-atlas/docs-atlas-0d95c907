@@ -1,0 +1,132 @@
+---
+title: "Knowledge base and RAG overview"
+description: "Learn how knowledge bases enhance agent responses with contextual information using RAG"
+---
+
+## What is a knowledge base?
+
+A knowledge base in Iqra AI is a structured collection of documents that enables your agents to access and retrieve relevant information during conversations. Using Retrieval-Augmented Generation (RAG), agents can ground their responses in your organization's specific knowledge, reducing hallucinations and providing accurate, contextual answers.
+
+<Note>
+Knowledge bases are particularly powerful for customer support, technical documentation, and domain-specific assistance where accurate information retrieval is critical.
+</Note>
+
+## How RAG works in Iqra AI
+
+The RAG pipeline in Iqra AI follows a sophisticated multi-stage process:
+
+<Steps>
+  <Step title="Document ingestion">
+    Documents are uploaded and processed through extractors that support multiple formats (PDF, text, and more). The system uses the Unstructured API for complex document parsing.
+  </Step>
+  
+  <Step title="Text chunking">
+    Documents are split into manageable chunks using configurable strategies:
+    - **General chunking**: Splits text by delimiter with configurable overlap
+    - **Parent-child chunking**: Creates hierarchical chunks for better context preservation
+  </Step>
+  
+  <Step title="Embedding generation">
+    Each chunk is converted into a vector embedding using your configured embedding provider (currently supports Google Gemini). Embeddings are cached to improve performance and reduce API costs.
+  </Step>
+  
+  <Step title="Vector storage">
+    Embeddings are stored in Milvus, a high-performance vector database designed for similarity search at scale. Collections are dynamically loaded and unloaded based on usage.
+  </Step>
+  
+  <Step title="Retrieval">
+    When an agent receives a query, the system:
+    1. Generates an embedding for the query
+    2. Searches the vector database for similar chunks
+    3. Optionally searches keyword indices for exact matches
+    4. Combines results using hybrid search strategies
+  </Step>
+  
+  <Step title="Post-processing">
+    Retrieved chunks undergo reranking and reordering to optimize relevance. The system supports:
+    - Rerank models for improved precision
+    - Lost-in-the-middle reordering to combat position bias
+    - Score thresholding to filter low-quality results
+  </Step>
+  
+  <Step title="Context injection">
+    The final curated context is injected into the agent's prompt, enabling it to generate responses grounded in your knowledge base.
+  </Step>
+</Steps>
+
+## Key features
+
+### Multiple retrieval strategies
+
+Iqra AI supports three retrieval approaches:
+
+- **Vector search**: Semantic similarity using embeddings
+- **Full-text search**: Keyword-based matching for exact terms
+- **Hybrid search**: Combines both approaches for maximum recall
+
+### Intelligent chunking
+
+Choose between chunking strategies based on your content:
+
+<CardGroup cols={2}>
+  <Card title="General chunking" icon="scissors">
+    Simple recursive text splitting with configurable chunk size and overlap. Ideal for uniformly structured content.
+  </Card>
+  <Card title="Parent-child chunking" icon="diagram-nested">
+    Hierarchical chunking that retrieves small chunks but provides larger parent context. Better for complex documents.
+  </Card>
+</CardGroup>
+
+### Embedding cache
+
+The system automatically caches embeddings to:
+- Reduce API calls to embedding providers
+- Improve query latency
+- Lower operational costs
+
+<Tip>
+Embedding cache is particularly effective for common queries and can significantly reduce costs in high-traffic scenarios.
+</Tip>
+
+### Dynamic collection management
+
+Milvus collections are automatically loaded into memory when needed and released after a configurable expiry period. This ensures optimal memory usage while maintaining fast query performance.
+
+## Benefits for agents
+
+When you link a knowledge base to an agent, it gains several capabilities:
+
+1. **Accurate responses**: Answers are grounded in verified information rather than model training data
+2. **Source attribution**: Each response can cite specific documents and chunks
+3. **Domain expertise**: Agents can handle specialized topics without fine-tuning
+4. **Up-to-date information**: Knowledge bases can be updated without retraining models
+5. **Reduced hallucinations**: Retrieval constrains the agent to factual information
+
+## Architecture overview
+
+The knowledge base system is built on several key components:
+
+- **KnowledgeBaseRetrievalManager**: Orchestrates the entire retrieval pipeline
+- **RAGRetrievalService**: Handles vector and keyword search operations
+- **RAGDataPostProcessor**: Applies reranking and filtering to results
+- **EmbeddingProviderManager**: Manages embedding model integrations
+- **MilvusKnowledgeBaseClient**: Interfaces with the Milvus vector database
+- **RAGKeywordStore**: Provides full-text search capabilities
+
+<Warning>
+Knowledge bases require proper infrastructure setup including MongoDB for metadata, Milvus for vectors, and Redis for caching. See the [setup guide](/knowledge/setup) for deployment details.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Setup guide" icon="wrench" href="/knowledge/setup">
+    Learn how to create and configure your first knowledge base
+  </Card>
+  <Card title="Embedding providers" icon="brain" href="/knowledge/embedding-providers">
+    Configure embedding model integrations
+  </Card>
+  <Card title="Retrieval strategies" icon="magnifying-glass" href="/knowledge/retrieval">
+    Optimize retrieval configuration for your use case
+  </Card>
+</CardGroup>

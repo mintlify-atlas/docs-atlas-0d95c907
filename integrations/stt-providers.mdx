@@ -1,0 +1,418 @@
+---
+title: STT provider integrations
+description: Configure speech-to-text providers for real-time transcription using Deepgram, Azure, AssemblyAI, or ElevenLabs
+---
+
+Iqra AI supports four speech-to-text (STT) providers through the `ISTTService` interface. All providers deliver real-time streaming transcription optimized for conversational applications.
+
+## Supported providers
+
+<CardGroup cols={2}>
+  <Card title="Deepgram" icon="waveform">
+    Industry-leading accuracy with ultra-low latency streaming
+  </Card>
+  <Card title="Azure Speech" icon="microsoft">
+    Microsoft's neural STT with 100+ language support
+  </Card>
+  <Card title="AssemblyAI" icon="microphone">
+    Advanced speech understanding with speaker diarization
+  </Card>
+  <Card title="ElevenLabs" icon="volume">
+    Multilingual transcription from the TTS leader
+  </Card>
+</CardGroup>
+
+## Provider configurations
+
+<Tabs>
+  <Tab title="Deepgram">
+    ### Deepgram Speech to Text
+
+    **Provider ID:** `Deepgram`  
+    **Implementation:** `DeepgramSTTService.cs`
+
+    Industry-leading accuracy with sub-300ms latency and support for 30+ languages.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Deepgram API key from console.deepgram.com |
+    | `model` | select | Yes | Model: `nova-2`, `enhanced`, `base` |
+    | `language` | text | No | Language code (e.g., `en`, `es`, `fr`) |
+    | `interimResults` | boolean | No | Enable partial transcripts (default: true) |
+    | `punctuate` | boolean | No | Add punctuation (default: true) |
+    | `profanityFilter` | boolean | No | Filter profanity (default: false) |
+    | `diarize` | boolean | No | Enable speaker diarization (default: false) |
+    | `smartFormat` | boolean | No | Format numbers, dates, currency (default: true) |
+    | `numericFormat` | boolean | No | Convert numbers to digits (default: true) |
+    | `encoding` | select | No | Audio format: `linear16`, `mulaw`, `opus` |
+    | `sampleRate` | number | No | Sample rate in Hz (8000, 16000, 48000) |
+    | `channels` | number | No | Audio channels (default: 1) |
+
+    #### Recommended settings for voice calls
+
+    ```json
+    {
+      "model": "nova-2",
+      "language": "en",
+      "interimResults": true,
+      "punctuate": true,
+      "smartFormat": true,
+      "encoding": "mulaw",
+      "sampleRate": 8000,
+      "channels": 1
+    }
+    ```
+
+    #### Model comparison
+
+    - **nova-2** - Latest generation, best accuracy, lowest latency (recommended)
+    - **nova** - Previous generation, balanced performance
+    - **enhanced** - Optimized for noisy environments
+    - **base** - Cost-optimized, basic accuracy
+
+    <Note>
+    Nova-2 supports automatic language detection across 100+ languages. Set `language: "multi"` to enable auto-detection, though single-language mode provides better accuracy.
+    </Note>
+
+    #### Smart formatting examples
+
+    With `smartFormat: true`:
+
+    - "twenty three dollars" → "$23"
+    - "march fifth two thousand twenty four" → "March 5, 2024"
+    - "one two three four five six seven eight nine zero" → "1234567890"
+
+    #### Language support
+
+    Deepgram supports 30+ languages including:
+
+    - **English** - `en`, `en-US`, `en-GB`, `en-AU`
+    - **Spanish** - `es`, `es-419` (Latin America)
+    - **French** - `fr`, `fr-CA`
+    - **German** - `de`
+    - **Arabic** - `ar`
+    - **Chinese** - `zh`, `zh-CN`, `zh-TW`
+    - **Hindi** - `hi`
+    - **Portuguese** - `pt`, `pt-BR`
+
+    See [Deepgram documentation](https://developers.deepgram.com/docs/languages) for the full list.
+  </Tab>
+
+  <Tab title="Azure Speech">
+    ### Azure Speech Services
+
+    **Provider ID:** `AzureSpeechServices`  
+    **Implementation:** `AzureSpeechSTTService.cs`
+
+    Microsoft's neural STT with support for 100+ languages and dialects.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `subscriptionKey` | password | Yes | Azure Speech resource key |
+    | `region` | text | Yes | Azure region (e.g., `eastus`, `westeurope`) |
+    | `language` | text | Yes | Language (e.g., `en-US`, `es-MX`) |
+    | `profanityFilter` | select | No | `masked`, `removed`, `raw` (default: `masked`) |
+    | `enableDictation` | boolean | No | Dictation mode (default: false) |
+    | `initialSilenceTimeout` | number | No | Timeout in ms (default: 5000) |
+    | `endSilenceTimeout` | number | No | End-of-speech timeout in ms |
+
+    #### Recommended settings
+
+    ```json
+    {
+      "region": "eastus",
+      "language": "en-US",
+      "profanityFilter": "masked",
+      "enableDictation": false,
+      "initialSilenceTimeout": 5000
+    }
+    ```
+
+    #### Profanity filtering
+
+    - **masked** - Replaces profanity with asterisks: "what the ****"
+    - **removed** - Deletes profanity entirely: "what the"
+    - **raw** - No filtering applied
+
+    #### Multi-language support
+
+    Azure excels at non-English languages:
+
+    - **Arabic** - `ar-SA`, `ar-EG`, `ar-AE`
+    - **Chinese** - `zh-CN`, `zh-TW`, `zh-HK`
+    - **Hindi** - `hi-IN`
+    - **Spanish** - `es-MX`, `es-ES`, `es-AR`
+    - **French** - `fr-FR`, `fr-CA`
+
+    See [Azure documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support) for all 100+ supported languages.
+
+    <Warning>
+    Azure has region-specific language availability. Ensure your selected language is available in your deployment region.
+    </Warning>
+  </Tab>
+
+  <Tab title="AssemblyAI">
+    ### AssemblyAI Speech to Text
+
+    **Provider ID:** `AssemblyAI`  
+    **Implementation:** `AssemblyAISpeechSTTService.cs`
+
+    Advanced speech understanding with features like sentiment analysis and entity detection.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | AssemblyAI API key from assemblyai.com |
+    | `language` | select | No | Language code (default: `en`) |
+    | `punctuate` | boolean | No | Add punctuation (default: true) |
+    | `formatText` | boolean | No | Format numbers and dates (default: true) |
+    | `diarize` | boolean | No | Speaker diarization (default: false) |
+    | `filterProfanity` | boolean | No | Filter profanity (default: false) |
+    | `redactPii` | boolean | No | Redact personally identifiable info (default: false) |
+    | `sampleRate` | number | No | Audio sample rate |
+
+    #### Recommended settings
+
+    ```json
+    {
+      "language": "en",
+      "punctuate": true,
+      "formatText": true,
+      "diarize": false,
+      "redactPii": false
+    }
+    ```
+
+    #### Advanced features
+
+    - **Speaker diarization** - Identify individual speakers in multi-party calls
+    - **PII redaction** - Automatically detect and redact sensitive information:
+      - Credit card numbers
+      - Social security numbers
+      - Email addresses
+      - Phone numbers
+      - Addresses
+    - **Sentiment analysis** - Detect emotional tone
+    - **Entity detection** - Extract names, organizations, locations
+
+    <Note>
+    PII redaction (`redactPii: true`) is critical for compliance in healthcare, finance, and other regulated industries. The transcription returns markers like `[CREDIT_CARD]` instead of actual values.
+    </Note>
+
+    #### Supported languages
+
+    AssemblyAI supports:
+
+    - English (`en`)
+    - Spanish (`es`)
+    - French (`fr`)
+    - German (`de`)
+    - Italian (`it`)
+    - Portuguese (`pt`)
+    - Dutch (`nl`)
+    - And 20+ additional languages
+  </Tab>
+
+  <Tab title="ElevenLabs">
+    ### ElevenLabs Speech to Text
+
+    **Provider ID:** `ElevenLabs`  
+    **Implementation:** `ElevenLabsSTTService.cs`
+
+    Multilingual transcription from the leader in voice synthesis.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | ElevenLabs API key from elevenlabs.io |
+    | `model` | select | No | Model version |
+    | `language` | text | No | Language code (e.g., `en`, `es`) |
+
+    #### Recommended settings
+
+    ```json
+    {
+      "model": "latest",
+      "language": "en"
+    }
+    ```
+
+    <Note>
+    ElevenLabs STT is optimized for integration with their TTS services, providing consistent language support across both transcription and synthesis.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Implementation details
+
+### Interface contract
+
+```csharp
+public interface ISTTService
+{
+    Task<FunctionReturnResult> Initialize();
+    Task<FunctionReturnResult> StartStreamingAsync(Stream audioStream, 
+                                                    CancellationToken cancellationToken);
+    event EventHandler<TranscriptionResult>? TranscriptionReceived;
+    event EventHandler<TranscriptionResult>? FinalTranscriptionReceived;
+}
+```
+
+### Streaming architecture
+
+All STT providers use WebSocket streaming for real-time transcription:
+
+1. **Connection establishment** - WebSocket opened to provider
+2. **Audio streaming** - Raw audio chunks sent continuously
+3. **Interim results** - Partial transcripts emitted via `TranscriptionReceived` event
+4. **Final results** - Complete transcripts emitted via `FinalTranscriptionReceived` event
+5. **Silence detection** - Automatic utterance segmentation
+
+This architecture enables the agent to begin processing responses before the user finishes speaking, reducing perceived latency.
+
+### Provider manager
+
+The `STTProviderManager` (defined in `IqraInfrastructure/Managers/STT/STTProviderManager.cs`) handles:
+
+- **Provider registration** - Auto-discovers implementations
+- **Model catalog** - Maintains available models per provider
+- **Configuration validation** - Ensures required fields
+- **Instance creation** - Instantiates provider services
+- **Event marshaling** - Routes transcription events to conversation engine
+
+### Audio format handling
+
+The system automatically converts incoming audio:
+
+1. **Telephony input** - μ-law 8kHz from SIP trunks
+2. **WebRTC input** - Opus 16/48kHz from browsers
+3. **Format conversion** - Converts to provider's preferred format
+4. **Resampling** - Adjusts sample rate if needed
+
+No manual configuration required.
+
+## Provider selection guide
+
+<Tabs>
+  <Tab title="Lowest latency">
+    **Recommended:**
+
+    1. **Deepgram Nova-2** - Sub-300ms latency
+    2. **Azure Speech** - Consistent low latency
+    3. **ElevenLabs** - Optimized for real-time
+
+    Critical for voice conversations where response time matters.
+  </Tab>
+
+  <Tab title="Best accuracy">
+    **Recommended:**
+
+    1. **Deepgram Nova-2** - Industry-leading WER (Word Error Rate)
+    2. **AssemblyAI** - Excellent for complex content
+    3. **Azure Speech** - Strong multilingual accuracy
+
+    Use for applications where transcription quality is paramount.
+  </Tab>
+
+  <Tab title="Multi-language">
+    **Recommended:**
+
+    1. **Azure Speech** - 100+ languages
+    2. **Deepgram** - 30+ languages with auto-detection
+    3. **AssemblyAI** - 20+ languages
+
+    Specialized:
+    - **Arabic** - Azure, Deepgram
+    - **Chinese** - Azure, Deepgram
+    - **Indic languages** - Azure
+  </Tab>
+
+  <Tab title="Compliance">
+    **Recommended:**
+
+    1. **AssemblyAI** - Built-in PII redaction
+    2. **Azure Speech** - Enterprise compliance certifications
+    3. **Deepgram** - HIPAA-compliant deployment options
+
+    Use PII redaction for HIPAA, GDPR, PCI-DSS compliance.
+  </Tab>
+</Tabs>
+
+## Configuration best practices
+
+### Telephony optimization
+
+For phone integrations:
+
+```json
+{
+  "encoding": "mulaw",
+  "sampleRate": 8000,
+  "channels": 1,
+  "interimResults": true
+}
+```
+
+### WebRTC optimization
+
+For browser/app integrations:
+
+```json
+{
+  "encoding": "opus",
+  "sampleRate": 48000,
+  "channels": 1,
+  "interimResults": true
+}
+```
+
+### Noise handling
+
+For environments with background noise:
+
+- **Deepgram**: Use `enhanced` model
+- **Azure**: Enable `enableDictation: false` for conversational mode
+- **AssemblyAI**: Default model handles noise well
+
+### Language detection
+
+For multi-language callers:
+
+1. **Deepgram**: Set `language: "multi"` for auto-detection
+2. **Azure**: Use language identification service (separate API)
+3. **Manual detection**: Detect via LLM analyzing first utterance
+
+## Adding custom providers
+
+To integrate a new STT provider:
+
+1. **Add enum value** in `IqraCore/Entities/Interfaces/InterfaceSTTProviderEnum.cs`
+2. **Implement interface** in `IqraInfrastructure/Managers/STT/Providers/`
+3. **Handle WebSocket streaming** to provider API
+4. **Emit transcription events** via `TranscriptionReceived` and `FinalTranscriptionReceived`
+5. **Restart application** for auto-registration
+
+See `DeepgramSTTService.cs:1-80` for reference implementation.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure LLM" href="/integrations/llm-providers">
+    Add language intelligence for processing transcripts
+  </Card>
+  <Card title="Add voice output" href="/integrations/tts-providers">
+    Configure text-to-speech for responses
+  </Card>
+  <Card title="Multi-language agents" href="/build/multi-language">
+    Configure parallel language contexts
+  </Card>
+  <Card title="Telephony integration" href="/integrations/telephony">
+    Deploy via phone providers
+  </Card>
+</CardGroup>

@@ -1,0 +1,357 @@
+---
+title: Agents
+description: Intelligent conversation orchestrators that combine AI with deterministic business logic
+---
+
+Agents are the brain of your conversational applications. They orchestrate the conversation by combining natural language understanding with deterministic execution, personality configuration, and business context awareness.
+
+## What is an agent?
+
+An agent is not just an AI model wrapper. It's a complete configuration that defines:
+
+- **Identity and personality**: Who the agent is and how it behaves
+- **Capabilities**: What the agent can do (scripts, tools, knowledge)
+- **Context awareness**: Business data the agent has access to
+- **Interaction rules**: How the agent handles interruptions and turn-taking
+- **Intelligence configuration**: Which AI models and services to use
+
+<Note>
+Think of an agent as a "digital employee" with a job description, personality traits, available tools, and access to company information.
+</Note>
+
+## Agent structure
+
+Every agent is composed of several key components:
+
+```csharp
+public class BusinessAppAgent
+{
+    public BusinessAppAgentGeneral General { get; set; }
+    public BusinessAppAgentContext Context { get; set; }
+    public BusinessAppAgentPersonality Personality { get; set; }
+    public BusinessAppAgentUtterances Utterances { get; set; }
+    public BusinessAppAgentInterruption Interruptions { get; set; }
+    public BusinessAppAgentKnowledgeBase KnowledgeBase { get; set; }
+    public BusinessAppAgentIntegrations Integrations { get; set; }
+    public BusinessAppAgentSettings Settings { get; set; }
+}
+```
+
+### General information
+
+Basic identity that appears in dashboards and routing:
+
+```csharp
+public class BusinessAppAgentGeneral
+{
+    public string Emoji { get; set; } = "🤖";
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Name { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Description { get; set; }
+}
+```
+
+**Example configuration:**
+- Emoji: 🏥
+- Name (English): "Medical Appointment Assistant"
+- Name (Arabic): "مساعد المواعيد الطبية"
+- Description: "Helps patients schedule, reschedule, and confirm medical appointments"
+
+### Context awareness
+
+Defines which business data the agent has access to:
+
+```csharp
+public class BusinessAppAgentContext
+{
+    public bool UseBranding { get; set; } = true;
+    public bool UseBranches { get; set; } = true;
+    public bool UseServices { get; set; } = true;
+    public bool UseProducts { get; set; } = true;
+}
+```
+
+When enabled, these flags automatically inject relevant business information into the agent's system prompt:
+
+- **Branding**: Company name, description, values
+- **Branches**: Office locations, hours, contact information
+- **Services**: Available services, pricing, descriptions
+- **Products**: Product catalog, features, availability
+
+<Info>
+Context injection is dynamic. The agent automatically receives updated business information without manual reconfiguration.
+</Info>
+
+### Personality configuration
+
+Defines how the agent behaves and communicates:
+
+```csharp
+public class BusinessAppAgentPersonality
+{
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Name { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Role { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Capabilities { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Ethics { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Tone { get; set; }
+}
+```
+
+**Example configuration:**
+
+```yaml
+Name: "Dr. Sarah"
+Role: "Professional medical appointment coordinator"
+
+Capabilities:
+  - Schedule new appointments
+  - Reschedule existing appointments
+  - Send appointment reminders
+  - Answer questions about office locations
+
+Ethics:
+  - Never share patient information
+  - Always verify identity before rescheduling
+  - Escalate medical questions to actual doctors
+
+Tone:
+  - Professional and warm
+  - Patient and understanding
+  - Clear and concise
+  - Empathetic to patient concerns
+```
+
+These personality traits are automatically injected into the AI's system prompt, shaping how it generates responses.
+
+### Interruption handling
+
+Controls how the agent handles turn-taking in real-time conversations:
+
+```csharp
+public class BusinessAppAgentInterruption
+{
+    public BusinessAppAgentInterruptionTurnEnd TurnEnd { get; set; }
+    public bool UseTurnByTurnMode { get; set; } = false;
+    public bool? IncludeInterruptedSpeechInTurnByTurnMode { get; set; }
+    public BusinessAppAgentInterruptionPauseTrigger? PauseTrigger { get; set; }
+    public BusinessAppAgentInterruptionVerification? Verification { get; set; }
+}
+```
+
+**Turn-taking modes:**
+
+1. **VAD (Voice Activity Detection)**: Standard silence detection
+2. **ML-based projection**: Predicts when user is finished speaking
+3. **LLM-based decision**: AI distinguishes between pauses and actual turn ends
+
+This is critical for natural voice conversations where detecting "uh-huh" vs. a true interruption matters.
+
+<Tip>
+For voice agents handling sensitive information, use LLM-based turn detection to better understand when users are pausing to think vs. actually finished speaking.
+</Tip>
+
+### Knowledge base integration
+
+Connects the agent to vector databases for Retrieval Augmented Generation (RAG):
+
+```csharp
+public class BusinessAppAgentKnowledgeBase
+{
+    public bool Enabled { get; set; }
+    public AgentKnowledgeBaseSearchStrategyTypeENUM SearchStrategy { get; set; }
+    public List<string> CollectionIds { get; set; }
+    public int MaxResults { get; set; }
+    public double SimilarityThreshold { get; set; }
+}
+```
+
+When enabled, the agent automatically searches your knowledge base and includes relevant information in its responses.
+
+### Integrations configuration
+
+Defines which AI providers and services the agent uses:
+
+```csharp
+public class BusinessAppAgentIntegrations
+{
+    public string? LLMProvider { get; set; }        // e.g., "OpenAI", "Azure", "Anthropic"
+    public string? ModelId { get; set; }            // e.g., "gpt-4", "claude-3-opus"
+    public string? TTSProvider { get; set; }        // e.g., "ElevenLabs", "Azure Speech"
+    public string? VoiceId { get; set; }            // Voice identifier
+    public string? STTProvider { get; set; }        // e.g., "Deepgram", "Azure Speech"
+}
+```
+
+This allows you to mix and match providers:
+- Use OpenAI for English conversations
+- Use Azure for Arabic with culturally appropriate voices
+- Use Groq for low-latency responses
+- Use Anthropic for complex reasoning tasks
+
+## How agents work
+
+### Conversation flow
+
+1. **User input arrives** (voice, text, or DTMF)
+2. **Agent loads active script** and current conversation state
+3. **Context is assembled** from business data, variables, and knowledge base
+4. **System prompt is generated** from personality, capabilities, and context
+5. **AI model processes** the input and generates a response
+6. **Deterministic layer validates** the response against script constraints
+7. **Response is delivered** through the appropriate channel
+8. **State is updated** and conversation continues
+
+### Multi-script orchestration
+
+Agents can work with multiple scripts simultaneously:
+
+- **Primary script**: The main conversation flow
+- **Added scripts**: Additional capabilities loaded dynamically
+- **Transfer scripts**: Conversation flows from other agents
+
+This allows complex scenarios like:
+```
+1. Agent starts with "Greeting" script
+2. User asks to schedule appointment → Agent loads "Scheduling" script
+3. User asks about billing → Agent transfers to "Billing Agent"
+```
+
+<Warning>
+When transferring between agents, ensure the receiving agent has access to necessary context variables. Use the `ScriptTransferToAgentNodeReferences` to track dependencies.
+</Warning>
+
+## Agent vs Script
+
+Understanding the difference is crucial:
+
+| Aspect | Agent | Script |
+|--------|-------|--------|
+| **Purpose** | Who is having the conversation | What conversation flow to follow |
+| **Contains** | Personality, voice, model settings | Nodes, edges, deterministic logic |
+| **Reusability** | Can use multiple scripts | Can be used by multiple agents |
+| **AI behavior** | Defines tone and capabilities | Defines structure and constraints |
+| **Example** | "Customer Support Agent" | "Handle Returns Flow" |
+
+<Note>
+Think of it this way: The **agent** is the person, the **script** is the instruction manual they follow.
+</Note>
+
+## Deployment patterns
+
+### Inbound routing
+
+Agents can be assigned to handle incoming calls/chats:
+
+```csharp
+public List<string> InboundRoutingReferences { get; set; }
+```
+
+Example: Route calls from +1-555-SUPPORT to "Technical Support Agent"
+
+### Outbound campaigns
+
+Agents can run proactive campaigns:
+
+```csharp
+public List<string> TelephonyCampaignReferences { get; set; }
+public List<string> WebCampaignReferences { get; set; }
+```
+
+Example: "Appointment Reminder Agent" calls patients 24 hours before appointments
+
+### Multi-channel deployment
+
+The same agent can handle:
+- Voice calls (SIP/PSTN)
+- WebRTC browser conversations
+- REST API chat integrations
+- WhatsApp/SMS messaging
+
+The personality and capabilities remain consistent across all channels.
+
+## Best practices
+
+### Define clear boundaries
+
+Be explicit about what the agent can and cannot do:
+
+```yaml
+Capabilities:
+  - Schedule appointments
+  - Answer hours and location questions
+  - Send confirmation emails
+
+Ethics:
+  - Never provide medical advice
+  - Never cancel appointments without confirmation
+  - Always offer to transfer to a human for complex issues
+```
+
+### Use context wisely
+
+Only enable context that the agent actually needs:
+
+```csharp
+// Good: Scheduling agent needs branches and services
+Context = new() {
+    UseBranches = true,
+    UseServices = true,
+    UseBranding = false,  // Doesn't need full brand story
+    UseProducts = false   // Not selling products
+}
+```
+
+### Optimize per language
+
+Different languages may need different configurations:
+
+```yaml
+English:
+  Provider: "OpenAI"
+  Model: "gpt-4"
+  Voice: "Deepgram Nova"
+  Tone: ["Professional", "Efficient"]
+
+Arabic:
+  Provider: "Azure"
+  Model: "gpt-4"
+  Voice: "Azure TTS - Fatima"
+  Tone: ["Hospitable", "Respectful", "Patient"]
+```
+
+### Test interruption behavior
+
+Different use cases need different turn-taking:
+
+- **Survey agents**: Turn-by-turn mode (wait for complete answers)
+- **Support agents**: ML-based (natural conversation flow)
+- **Authentication agents**: LLM-based (understand hesitation vs. completion)
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Scripts" icon="diagram-project" href="/concepts/scripts">
+    Learn how to build conversation flows that agents execute
+  </Card>
+  <Card title="Build an agent" icon="hammer" href="/build/agent">
+    Step-by-step guide to creating your first agent
+  </Card>
+  <Card title="Multi-language" icon="language" href="/concepts/multi-language">
+    Configure agents for multiple languages and cultures
+  </Card>
+  <Card title="Interruptions" icon="hand" href="/build/agent/interruption">
+    Fine-tune turn-taking and conversation dynamics
+  </Card>
+</CardGroup>

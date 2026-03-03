@@ -1,0 +1,153 @@
+---
+title: Integrations overview
+description: Understand Iqra AI's BYOM (Bring Your Own Model) architecture and integration system
+---
+
+Iqra AI is built on a **Bring Your Own Model (BYOM)** architecture that provides complete flexibility in choosing your AI service providers. Unlike platforms that lock you into specific vendors, Iqra AI's modular integration system allows you to plug in your preferred providers across every layer of the stack.
+
+## Integration categories
+
+The platform supports five main integration categories:
+
+<CardGroup cols={2}>
+  <Card title="LLM providers" icon="brain" href="/integrations/llm-providers">
+    Connect OpenAI, Anthropic, Gemini, Groq, or Azure for language intelligence
+  </Card>
+  <Card title="TTS providers" icon="volume" href="/integrations/tts-providers">
+    Use ElevenLabs, Azure, Deepgram, Cartesia, and 14+ other text-to-speech services
+  </Card>
+  <Card title="STT providers" icon="microphone" href="/integrations/stt-providers">
+    Integrate Deepgram, Azure, AssemblyAI, or ElevenLabs for speech recognition
+  </Card>
+  <Card title="Telephony providers" icon="phone" href="/integrations/telephony">
+    Deploy via Twilio, Telnyx, Vonage, or SIP trunking
+  </Card>
+  <Card title="FlowApps" icon="plug" href="/integrations/flowapps">
+    Extend agent capabilities with plugin integrations like Cal.com
+  </Card>
+</CardGroup>
+
+## Architecture principles
+
+### Provider abstraction layer
+
+Each integration type implements a standardized interface that abstracts provider-specific details:
+
+- **LLM providers** implement `ILLMService` for streaming language model responses
+- **TTS providers** implement `ITTSService` for audio synthesis
+- **STT providers** implement `ISTTService` for speech transcription
+- **Telephony providers** implement standardized call control interfaces
+- **FlowApps** implement `IFlowApp` for action and data fetcher registration
+
+This abstraction allows you to swap providers without changing your agent logic.
+
+### Configuration model
+
+All providers follow a consistent configuration pattern:
+
+```typescript
+{
+  "id": "provider_enum_value",
+  "integrationId": "link_to_credentials",
+  "models": [
+    {
+      "id": "model_identifier",
+      "name": "Display Name",
+      "enabled": true
+    }
+  ],
+  "userIntegrationFields": [
+    {
+      "id": "field_id",
+      "name": "Field Label",
+      "type": "text|number|select|password",
+      "required": true,
+      "isEncrypted": false
+    }
+  ]
+}
+```
+
+<Note>
+Sensitive fields like API keys are automatically encrypted when `isEncrypted: true` using AES-256 encryption before storage.
+</Note>
+
+### Provider registration
+
+Providers are automatically discovered and registered at runtime using reflection:
+
+1. **Enumeration definition** - Each provider type has an enum (e.g., `InterfaceLLMProviderEnum`)
+2. **Service implementation** - Provider classes implement the interface and expose a static `GetProviderTypeStatic()` method
+3. **Runtime registration** - Manager classes scan assemblies and register matching implementations
+4. **Database initialization** - Provider metadata is seeded into MongoDB on first startup
+
+This design allows adding new providers by simply implementing the interface—no manual registration required.
+
+## Integration credentials
+
+Credentials are managed through the **Integrations** system:
+
+- Defined in `IqraCore.Entities.Integrations.IntegrationData`
+- Support multiple field types (text, password, select, number)
+- Include validation schemas via `IntegrationFieldData`
+- Link to providers via `IntegrationId` foreign key
+
+### Field configuration
+
+Integration fields support:
+
+- **Type validation** - String regex, number min/max, array constraints
+- **Conditional visibility** - Show/hide fields based on model selection or other field values
+- **Encryption** - Automatic encryption for sensitive values (API keys, tokens)
+- **Default values** - Pre-populated recommended settings
+- **Help documentation** - Inline tooltips and links via `IntegrationHelpData`
+
+## Multi-region architecture
+
+Iqra AI's integration system is designed for global deployment:
+
+- **Provider endpoints** - Configure region-specific endpoints (e.g., Azure regions, OpenAI geo routing)
+- **Latency optimization** - Route requests to nearest provider region based on session location
+- **Failover support** - Automatic fallback to alternate providers on failure
+- **Load balancing** - Distribute requests across multiple provider accounts
+
+<Warning>
+When deploying in multiple regions, ensure your provider subscriptions support the geographic markets you're targeting. Some providers have region-specific availability or pricing.
+</Warning>
+
+## Provider model selection
+
+Each provider supports multiple models with distinct capabilities:
+
+```csharp
+public class ProviderModelBase
+{
+    public string Id { get; set; }              // e.g., "gpt-4o"
+    public string Name { get; set; }            // Display name
+    public DateTime? DisabledAt { get; set; }   // Model availability
+    public bool IsDefault { get; set; }         // Default selection
+}
+```
+
+Models can be:
+
+- **Enabled/disabled** at runtime without code changes
+- **Version-locked** to specific provider model identifiers
+- **Conditionally available** based on integration configuration
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure LLM providers" href="/integrations/llm-providers">
+    Set up OpenAI, Anthropic, or other language models
+  </Card>
+  <Card title="Add voice capabilities" href="/integrations/tts-providers">
+    Configure text-to-speech for natural conversations
+  </Card>
+  <Card title="Enable speech input" href="/integrations/stt-providers">
+    Set up speech-to-text transcription
+  </Card>
+  <Card title="Deploy telephony" href="/integrations/telephony">
+    Connect Twilio or other phone providers
+  </Card>
+</CardGroup>

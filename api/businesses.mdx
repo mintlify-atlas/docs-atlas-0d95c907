@@ -1,0 +1,285 @@
+---
+title: Businesses
+description: Retrieve business configuration and settings
+---
+
+## Get business
+
+Retrieve complete business information including metadata and application configuration.
+
+```http
+GET /api/v1/business/{businessId}
+```
+
+### Path parameters
+
+<ParamField path="businessId" type="integer" required>
+  The unique identifier for the business
+</ParamField>
+
+### Response
+
+Returns a business object with metadata and application configuration.
+
+<ResponseField name="Success" type="boolean">
+  Indicates whether the request was successful
+</ResponseField>
+
+<ResponseField name="Data" type="object">
+  The business data object
+  
+  <Expandable title="BusinessData properties">
+    <ResponseField name="Id" type="integer">
+      Unique business identifier
+    </ResponseField>
+    
+    <ResponseField name="MasterUserEmail" type="string">
+      Email of the business owner
+    </ResponseField>
+    
+    <ResponseField name="Name" type="string">
+      Business name
+    </ResponseField>
+    
+    <ResponseField name="LogoUrl" type="string">
+      Pre-signed URL for the business logo (valid for 24 hours)
+    </ResponseField>
+    
+    <ResponseField name="DefaultLanguage" type="string">
+      Default language code for the business
+    </ResponseField>
+    
+    <ResponseField name="Languages" type="array">
+      Array of supported language codes
+    </ResponseField>
+    
+    <ResponseField name="Tutorials" type="object">
+      Tutorial completion status
+    </ResponseField>
+    
+    <ResponseField name="Permission" type="object">
+      Business module permissions
+    </ResponseField>
+    
+    <ResponseField name="WhiteLabelAssignedCustomerEmail" type="string">
+      Email of white label customer if applicable
+    </ResponseField>
+  </Expandable>
+  
+  <Expandable title="BusinessApp properties">
+    <ResponseField name="Id" type="integer">
+      Application identifier
+    </ResponseField>
+    
+    <ResponseField name="Context" type="object">
+      Global context configuration
+    </ResponseField>
+    
+    <ResponseField name="Tools" type="array">
+      Available tools and integrations
+    </ResponseField>
+    
+    <ResponseField name="Agents" type="array">
+      Array of configured AI agents
+      
+      <Expandable title="Agent properties">
+        <ResponseField name="Id" type="string">
+          Unique agent identifier
+        </ResponseField>
+        
+        <ResponseField name="General" type="object">
+          General agent configuration
+        </ResponseField>
+        
+        <ResponseField name="Context" type="object">
+          Agent-specific context
+        </ResponseField>
+        
+        <ResponseField name="Personality" type="object">
+          Personality and tone settings
+        </ResponseField>
+        
+        <ResponseField name="Utterances" type="object">
+          Predefined responses and greetings
+        </ResponseField>
+        
+        <ResponseField name="Interruptions" type="object">
+          Interruption handling configuration
+        </ResponseField>
+        
+        <ResponseField name="KnowledgeBase" type="object">
+          Knowledge base settings
+        </ResponseField>
+        
+        <ResponseField name="Integrations" type="object">
+          Agent integrations (STT, LLM, TTS)
+        </ResponseField>
+        
+        <ResponseField name="Cache" type="object">
+          Caching configuration
+        </ResponseField>
+        
+        <ResponseField name="Settings" type="object">
+          Advanced agent settings including background audio URL
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Scripts" type="array">
+      Conversation scripts
+    </ResponseField>
+    
+    <ResponseField name="Integrations" type="array">
+      Business-level integrations
+      
+      <Expandable title="Integration properties">
+        <ResponseField name="Id" type="string">
+          Integration identifier
+        </ResponseField>
+        
+        <ResponseField name="Type" type="string">
+          Integration type (e.g., STT, LLM, TTS, webhook)
+        </ResponseField>
+        
+        <ResponseField name="FriendlyName" type="string">
+          Human-readable integration name
+        </ResponseField>
+        
+        <ResponseField name="Fields" type="object">
+          Integration configuration fields
+        </ResponseField>
+        
+        <ResponseField name="BusinessNumberReferences" type="array">
+          Phone numbers using this integration
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Cache" type="object">
+      Business-level caching settings
+    </ResponseField>
+    
+    <ResponseField name="Routings" type="array">
+      Call routing rules
+    </ResponseField>
+    
+    <ResponseField name="Numbers" type="array">
+      Configured phone numbers
+    </ResponseField>
+    
+    <ResponseField name="KnowledgeBases" type="array">
+      Knowledge base configurations
+    </ResponseField>
+    
+    <ResponseField name="TelephonyCampaigns" type="array">
+      Outbound telephony campaigns
+    </ResponseField>
+    
+    <ResponseField name="WebCampaigns" type="array">
+      Web-based campaigns
+    </ResponseField>
+    
+    <ResponseField name="PostAnalysis" type="array">
+      Post-call analysis configurations
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="Code" type="string">
+  Error code if Success is false
+</ResponseField>
+
+<ResponseField name="Message" type="string">
+  Error message if Success is false
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.iqra.ai/api/v1/business/12345 \
+  -H "Authorization: Token YOUR_API_KEY"
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.iqra.ai/api/v1/business/12345', {
+  headers: {
+    'Authorization': 'Token YOUR_API_KEY'
+  }
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.iqra.ai/api/v1/business/12345',
+    headers={'Authorization': 'Token YOUR_API_KEY'}
+)
+
+data = response.json()
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "Success": true,
+  "Data": {
+    "BusinessData": {
+      "Id": 12345,
+      "MasterUserEmail": "user@example.com",
+      "Name": "My Business",
+      "LogoUrl": "https://s3.amazonaws.com/...",
+      "DefaultLanguage": "en",
+      "Languages": ["en", "es", "fr"],
+      "Tutorials": {},
+      "Permission": {
+        "MakeCall": true,
+        "Conversations": {
+          "ConversationPermissions": true,
+          "Outbound": true,
+          "Inbound": true
+        }
+      }
+    },
+    "BusinessApp": {
+      "Id": 12345,
+      "Context": {},
+      "Tools": [],
+      "Agents": [
+        {
+          "Id": "agent_abc123",
+          "General": {
+            "Name": "Sales Agent",
+            "Description": "Handles sales inquiries"
+          },
+          "Settings": {
+            "BackgroundAudioUrl": "https://s3.amazonaws.com/..."
+          }
+        }
+      ],
+      "Integrations": [],
+      "Numbers": [],
+      "TelephonyCampaigns": []
+    }
+  }
+}
+```
+
+## Permissions required
+
+This endpoint requires:
+- Valid API key with access to the specified business
+- User account must not be disabled
+- Business must not be disabled
+- API key must not have business restrictions, or must include this business ID
+
+## Notes
+
+- Logo URLs and background audio URLs are pre-signed and expire after 24 hours
+- The response includes complete business configuration including all agents, integrations, and campaigns
+- Encrypted integration fields are excluded from the response for security

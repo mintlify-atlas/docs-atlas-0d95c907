@@ -1,0 +1,463 @@
+---
+title: Secure sessions
+description: PCI-DSS compliant data collection for sensitive information
+---
+
+Secure Sessions create a "clean room" for collecting sensitive data like credit card numbers, Social Security Numbers, and PINs. The AI never sees the raw values, ensuring compliance with data privacy standards including PCI-DSS.
+
+## The problem
+
+Traditional AI agents process all input through the LLM:
+
+```
+User speaks: "My credit card number is 4532-1234-5678-9010"
+  ↓
+STT converts to text
+  ↓
+LLM sees: "My credit card number is 4532-1234-5678-9010" ← SECURITY RISK
+  ↓
+LLM processes and stores in conversation history
+  ↓
+Data appears in logs, training data, and embeddings
+```
+
+This violates PCI-DSS requirements that prohibit storing unencrypted cardholder data.
+
+## The solution
+
+Iqra AI's Secure Sessions bypass the AI layer entirely for sensitive input:
+
+```
+User presses: 4-5-3-2-1-2-3-4-5-6-7-8-9-0-1-0 (DTMF tones)
+  ↓
+Deterministic engine captures keypad input directly
+  ↓
+Encrypts immediately (before any processing)
+  ↓
+Stores in variable: customer_card_number = "[ENCRYPTED]"
+  ↓
+Validation result sent to AI: "valid" or "invalid"
+  ↓
+LLM never sees the actual digits
+```
+
+## How it works
+
+### DTMF input collection
+
+Use the **DTMF Input** system tool with encryption enabled:
+
+<ParamField path="EncryptInput" type="boolean" required>
+  Set to `true` for secure data collection
+</ParamField>
+
+<ParamField path="VariableName" type="string" required>
+  Variable to store encrypted value
+</ParamField>
+
+<ParamField path="MaxLength" type="integer" required>
+  Maximum digits (e.g., 16 for credit cards)
+</ParamField>
+
+<ParamField path="RequireEndHash" type="boolean" default="false">
+  Require `#` key to finish input (recommended)
+</ParamField>
+
+**Example configuration:**
+
+```json
+{
+  "NodeType": "ExecuteSystemTool",
+  "ToolType": "GetDTMFKeypadInput",
+  "EncryptInput": true,
+  "VariableName": "customer_pin",
+  "MaxLength": 4,
+  "RequireEndHash": true,
+  "Timeout": 10000
+}
+```
+
+### Variable isolation
+
+Mark the variable as hidden from the AI:
+
+```json
+{
+  "Key": "customer_pin",
+  "Type": "String",
+  "IsVisibleToAgent": false,  // AI cannot see this
+  "IsEditableByAI": false,    // AI cannot modify this
+  "Description": {
+    "en": "Customer's encrypted PIN (never visible to AI)"
+  }
+}
+```
+
+With `IsVisibleToAgent: false`, the variable:
+- Does NOT appear in the LLM system prompt
+- Does NOT appear in conversation history
+- Does NOT appear in embeddings or RAG context
+- Is NOT included in tool call contexts (unless explicitly passed)
+
+### Validation without exposure
+
+Pass the encrypted value to your backend for validation:
+
+```
+Custom Tool: Validate PIN
+  Input: {
+    "encrypted_pin": "{{ variables.customer_pin }}"
+  }
+  ↓
+Backend:
+  1. Decrypts the PIN server-side
+  2. Validates against stored hash
+  3. Returns: { "valid": true }
+  ↓
+Set variable: pin_validation_result = "valid"
+  ↓
+AI Response: "Thank you, your PIN has been verified."
+```
+
+The AI only sees `pin_validation_result` ("valid" or "invalid"), never the actual PIN.
+
+## PCI-DSS compliance flow
+
+Here's a complete PCI-compliant credit card collection workflow:
+
+<Steps>
+  <Step title="Prompt for card number">
+    ```
+    AI Response: "Please enter your 16-digit credit card number using your keypad, followed by the pound key."
+    ```
+  </Step>
+  
+  <Step title="Collect encrypted input">
+    ```
+    DTMF Input Node:
+      - EncryptInput: true
+      - VariableName: "card_number"
+      - MaxLength: 16
+      - RequireEndHash: true
+      - Timeout: 30000
+    ```
+  </Step>
+  
+  <Step title="Prompt for CVV">
+    ```
+    AI Response: "Now please enter the 3-digit security code on the back of your card, followed by pound."
+    ```
+  </Step>
+  
+  <Step title="Collect encrypted CVV">
+    ```
+    DTMF Input Node:
+      - EncryptInput: true
+      - VariableName: "card_cvv"
+      - MaxLength: 4  // Support Amex 4-digit CVV
+      - RequireEndHash: true
+      - Timeout: 15000
+    ```
+  </Step>
+  
+  <Step title="Validate with payment processor">
+    ```
+    Custom Tool: Tokenize Card
+      Input: {
+        "encrypted_card_number": "{{ variables.card_number }}",
+        "encrypted_cvv": "{{ variables.card_cvv }}"
+      }
+      Output: {
+        "token": "tok_1234567890",
+        "last4": "9010",
+        "brand": "visa"
+      }
+    ```
+    
+    Your backend:
+    1. Decrypts the inputs
+    2. Sends to payment processor (Stripe, Square, etc.)
+    3. Receives token
+    4. Returns token + safe metadata
+  </Step>
+  
+  <Step title="Store token, discard card data">
+    ```
+    Set variable: payment_token = "tok_1234567890"
+    Set variable: card_last4 = "9010"
+    Set variable: card_brand = "visa"
+    
+    // Encrypted card_number and card_cvv are never decrypted on AI infrastructure
+    ```
+  </Step>
+  
+  <Step title="Confirm with safe information">
+    ```
+    AI Response: "Thank you. I've securely saved your {{ variables.card_brand }} ending in {{ variables.card_last4 }}."
+    ```
+    
+    The AI speaks non-sensitive metadata only.
+  </Step>
+</Steps>
+
+<Note>
+The encrypted card data is automatically purged after the session ends. Only the token persists for future transactions.
+</Note>
+
+## Security architecture
+
+### Encryption layer
+
+When `EncryptInput: true`, Iqra AI:
+
+1. Captures DTMF tones directly from the media stream
+2. Converts tones to digits in-memory (never written to disk)
+3. Encrypts using AES-256-GCM with session-specific key
+4. Stores ciphertext in variable
+5. Clears plaintext from memory immediately
+
+### Key management
+
+Encryption keys are:
+- Generated per-session (ephemeral)
+- Rotated every 24 hours for long-running sessions
+- Never logged or persisted
+- Destroyed when session ends
+
+### Decryption handoff
+
+Only your backend can decrypt:
+
+```
+Your Backend API (PCI-compliant infrastructure)
+  ↓
+Receives: { "encrypted_pin": "Xk7pQ9..." }
+  ↓
+Decrypts using shared secret
+  ↓
+Validates against database
+  ↓
+Returns: { "valid": true }
+  ↓
+Cleartext never leaves your PCI environment
+```
+
+<Warning>
+Your backend must be PCI-DSS compliant to handle decrypted cardholder data. Use a certified payment processor (Stripe, Braintree) whenever possible instead of handling raw card data.
+</Warning>
+
+## Variable visibility matrix
+
+| Variable Configuration | Visible to AI | Visible in Logs | Can Validate |
+|------------------------|---------------|-----------------|---------------|
+| `IsVisibleToAgent: true`<br/>`EncryptInput: false` | ✓ Yes | ✓ Yes | ✓ Yes |
+| `IsVisibleToAgent: false`<br/>`EncryptInput: false` | ✗ No | ✓ Yes (plaintext) | ✓ Yes |
+| `IsVisibleToAgent: false`<br/>`EncryptInput: true` | ✗ No | ✓ Yes (encrypted) | ✓ Via backend |
+
+**Recommendation:** Use `IsVisibleToAgent: false` + `EncryptInput: true` for maximum security.
+
+## Common use cases
+
+### PIN verification
+
+```
+AI: "Please enter your 4-digit PIN"
+  ↓
+DTMF: Collect encrypted PIN
+  ↓
+Custom Tool: Validate PIN
+  ├─ Valid → Continue
+  └─ Invalid → Retry (max 3 attempts)
+```
+
+### Social Security Number collection
+
+```
+AI: "For identity verification, please enter your 9-digit Social Security Number"
+  ↓
+DTMF: Collect encrypted SSN (MaxLength: 9)
+  ↓
+Custom Tool: Verify identity
+  ↓
+Set variable: identity_verified = true
+  ↓
+AI: "Thank you, your identity has been verified."
+```
+
+### Credit card payment
+
+See [PCI-DSS compliance flow](#pci-dss-compliance-flow) above.
+
+### Account number lookup
+
+```
+AI: "Please enter your account number"
+  ↓
+DTMF: Collect encrypted account number
+  ↓
+Custom Tool: Lookup account
+  ↓
+Set variables:
+  - account_exists = true
+  - account_type = "checking"
+  - account_balance = 1250.00
+  ↓
+AI: "I found your {{ variables.account_type }} account with a balance of ${{ variables.account_balance }}."
+```
+
+<Tip>
+Even non-sensitive data like account numbers benefit from encryption to prevent social engineering attacks where attackers guess account numbers.
+</Tip>
+
+## Best practices
+
+### Always use encryption for:
+- Credit/debit card numbers
+- CVV/CVC codes
+- Bank account numbers
+- Social Security Numbers
+- PINs and passwords
+- Health record identifiers (HIPAA)
+- Any personally identifiable information (PII)
+
+### Provide clear instructions
+
+Users aren't used to entering long numbers via keypad:
+
+<Tabs>
+  <Tab title="Good">
+    ```
+    "Please enter your 16-digit credit card number using your phone's keypad. Press the pound key when finished."
+    ```
+  </Tab>
+  
+  <Tab title="Bad">
+    ```
+    "What's your card number?"
+    ```
+    
+    User might try to speak it instead of using keypad.
+  </Tab>
+</Tabs>
+
+### Set appropriate timeouts
+
+Longer inputs need more time:
+
+- 4-digit PIN: 10-15 seconds
+- 16-digit card number: 30-45 seconds
+- 9-digit SSN: 20-30 seconds
+
+### Implement retry logic
+
+```
+While attempts < 3:
+  Collect encrypted input
+  Validate
+  If invalid:
+    AI: "That doesn't seem right. Let's try again."
+    Increment attempts
+  Else:
+    Break
+    
+If attempts >= 3:
+  AI: "I'm having trouble verifying your information. Let me transfer you to a representative."
+  Transfer to Human
+```
+
+### Confirm without revealing
+
+<Tabs>
+  <Tab title="Good">
+    ```
+    AI: "Thank you. I've securely saved your Visa ending in 9010."
+    ```
+  </Tab>
+  
+  <Tab title="Bad">
+    ```
+    AI: "Thank you. I've saved your card number 4532-1234-5678-9010."
+    ```
+    
+    Never speak back the full number.
+  </Tab>
+</Tabs>
+
+### Purge after use
+
+Encrypted variables are automatically purged when the session ends, but you can also explicitly clear them:
+
+```
+After payment processed:
+  Set variable: card_number = null
+  Set variable: card_cvv = null
+```
+
+## Testing secure sessions
+
+### Development mode
+
+During testing, you can log encrypted values to verify collection:
+
+```json
+{
+  "card_number": "enc_AES256_Xk7pQ9mN4vL2...",
+  "card_cvv": "enc_AES256_8tY3rP1nK5..."
+}
+```
+
+Never enable this logging in production.
+
+### Test card numbers
+
+Use standard test cards for validation:
+
+- Visa: 4532-1234-5678-9010
+- Mastercard: 5425-2334-3010-9903
+- Amex: 3782-822463-10005
+
+### Mock backend responses
+
+Your Custom Tool can return mock validation during testing:
+
+```json
+{
+  "valid": true,
+  "token": "tok_test_1234567890",
+  "last4": "9010",
+  "brand": "visa"
+}
+```
+
+## Compliance certifications
+
+Iqra AI infrastructure is designed for:
+
+- **PCI-DSS Level 1** - Payment card data protection
+- **HIPAA** - Healthcare information privacy
+- **SOC 2 Type II** - Security and availability controls
+- **GDPR** - EU data protection requirements
+
+<Note>
+Your implementation must also be compliant. Use certified payment processors and consult with compliance experts before handling sensitive data.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Script nodes" href="/building/script-nodes" icon="diagram-project">
+    Learn about DTMF Input and other nodes
+  </Card>
+  
+  <Card title="Action flows" href="/building/action-flows" icon="code-branch">
+    Build validation workflows
+  </Card>
+  
+  <Card title="Custom tools" href="/building/custom-tools" icon="wrench">
+    Integrate with payment processors
+  </Card>
+  
+  <Card title="Compliance" href="/security/compliance" icon="shield-check">
+    Security and compliance documentation
+  </Card>
+</CardGroup>

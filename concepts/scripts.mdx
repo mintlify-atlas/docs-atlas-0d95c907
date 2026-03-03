@@ -1,0 +1,541 @@
+---
+title: Scripts
+description: Node-based conversation flows that combine deterministic logic with AI intelligence
+---
+
+Scripts are the blueprint of your conversations. They define the structure, logic, and deterministic behavior that guides how your agents interact with users. Unlike pure AI conversations that can be unpredictable, scripts provide a controlled framework while still allowing natural language understanding.
+
+## What is a script?
+
+A script is a visual, node-based flow that defines:
+
+- **Conversation structure**: The path conversations can take
+- **Deterministic actions**: System operations that execute predictably
+- **AI guidance**: Instructions and examples for natural responses
+- **State management**: Variables that track conversation data
+- **Tool invocation**: When and how to call external services
+
+<Note>
+Scripts are built in a visual IDE similar to Typebot.io or n8n, but specifically designed for conversational AI with voice and text channels.
+</Note>
+
+## Script architecture
+
+### Core structure
+
+Every script consists of four main components:
+
+```csharp
+public class BusinessAppScript
+{
+    public BusinessAppScriptGeneral General { get; set; }
+    public List<BusinessAppScriptNode> Nodes { get; set; }
+    public List<BusinessAppScriptEdge> Edges { get; set; }
+    public List<BusinessAppScriptVariable> Variables { get; set; }
+}
+```
+
+**Components explained:**
+
+1. **General**: Name, description, and metadata
+2. **Nodes**: Individual building blocks (AI responses, tools, logic)
+3. **Edges**: Connections that define flow between nodes
+4. **Variables**: State storage for conversation data
+
+### Visual representation
+
+Scripts are built in a drag-and-drop canvas:
+
+```
+[Start Node] → [AI Response: Greeting]
+                       ↓
+           [User Query: Appointment Request]
+                       ↓
+           [FlowApp: Check Availability]
+                  ↙          ↘
+    [Available]              [Not Available]
+         ↓                          ↓
+ [System Tool:          [AI Response: Suggest
+  Book Appointment]      Alternative Times]
+         ↓                          ↓
+ [End Call]                  [Go To: Booking]
+```
+
+## Node types
+
+Scripts are built from different types of nodes, each serving a specific purpose:
+
+### Start node
+
+Every script begins with a start node:
+
+```csharp
+public class BusinessAppScriptStartNode : BusinessAppScriptNode
+{
+    public override BusinessAppAgentScriptNodeTypeENUM NodeType => BusinessAppAgentScriptNodeTypeENUM.Start;
+}
+```
+
+This is the entry point when the script is activated. A script can only have one start node.
+
+### AI response node
+
+Defines what the AI should say and provides examples:
+
+```csharp
+public class BusinessAppScriptAIResponseNode : BusinessAppScriptNode
+{
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Response { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Examples { get; set; }
+}
+```
+
+**Example configuration:**
+
+```yaml
+Response:
+  English: "Great! I can help you schedule an appointment. Which service are you interested in?"
+  Arabic: "رائع! يمكنني مساعدتك في حجز موعد. ما هي الخدمة التي تهتم بها؟"
+
+Examples:
+  English:
+    - "I'd be happy to book that for you. What service do you need?"
+    - "Perfect! Let me help you schedule. Which service would you like?"
+  Arabic:
+    - "يسعدني حجز ذلك لك. ما هي الخدمة التي تحتاجها؟"
+```
+
+The AI uses the response as guidance and the examples to understand tone and variation. The actual response is generated naturally, not templated.
+
+<Tip>
+Provide 3-5 examples to give the AI enough variety while maintaining consistency. The AI will generate unique responses that match the style.
+</Tip>
+
+### User query node
+
+Defines what information you're asking the user for:
+
+```csharp
+public class BusinessAppScriptUserQueryNode : BusinessAppScriptNode
+{
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Query { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Examples { get; set; }
+}
+```
+
+**Example configuration:**
+
+```yaml
+Query:
+  English: "Ask the user which date they prefer for their appointment"
+  
+Examples:
+  English:
+    - "What date works best for you?"
+    - "When would you like to schedule your appointment?"
+    - "Do you have a preferred date in mind?"
+```
+
+The AI will ask the question naturally and extract the relevant information (the date) from the user's response.
+
+### System tool node
+
+Executes deterministic system operations:
+
+```csharp
+public class BusinessAppScriptSystemToolNode : BusinessAppScriptNode
+{
+    public virtual BusinessAppAgentScriptNodeSystemToolTypeENUM ToolType { get; set; }
+}
+```
+
+**Available system tools:**
+
+| Tool Type | Purpose | Example Use Case |
+|-----------|---------|------------------|
+| **End Call** | Terminates the conversation | After completing booking |
+| **DTMF Input** | Collects keypad input | PIN verification |
+| **Transfer to Agent** | Hands off to another agent | Escalation to supervisor |
+| **Add Script** | Loads additional script | Add payment flow to booking |
+| **Send SMS** | Sends text message | Appointment confirmation |
+| **Retrieve Knowledge** | Searches vector database | Find policy information |
+| **Go To Node** | Jumps to another node | Restart booking process |
+
+#### Example: DTMF input node
+
+```csharp
+public class BusinessAppScriptDTMFInputToolNode : BusinessAppScriptSystemToolNode
+{
+    public int Timeout { get; set; } = 5000;
+    public bool RequireStartAsterisk { get; set; } = false;
+    public bool RequireEndHash { get; set; } = false;
+    public int MaxLength { get; set; } = 1;
+    public bool EncryptInput { get; set; } = false;
+    public string? VariableName { get; set; };
+    public List<BusinessAppAgentScriptDTMFOutcome> Outcomes { get; set; };
+}
+```
+
+**Use case: Secure PIN collection**
+
+```yaml
+Configuration:
+  MaxLength: 4
+  EncryptInput: true          # Keeps PIN hidden from AI
+  VariableName: "user_pin"
+  RequireEndHash: true
+  
+Outcomes:
+  - Value: { English: "Correct" }
+    PortId: "success_port"
+  - Value: { English: "Incorrect" }
+    PortId: "retry_port"
+```
+
+<Warning>
+Always use `EncryptInput: true` when collecting sensitive information like PINs, credit card numbers, or SSNs. This ensures the AI never sees the raw data.
+</Warning>
+
+#### Example: End call node
+
+```csharp
+public class BusinessAppScriptEndCallToolNode : BusinessAppScriptSystemToolNode
+{
+    public BusinessAppAgentScriptEndCallTypeENUM Type { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string>? Messages { get; set; };
+}
+```
+
+**Configuration:**
+
+```yaml
+Type: AfterMessage  # Options: Immediate, AfterMessage
+
+Messages:
+  English: "Thank you for calling! Your appointment is confirmed. Have a great day!"
+  Arabic: "شكراً لاتصالك! تم تأكيد موعدك. أتمنى لك يوماً سعيداً!"
+```
+
+### FlowApp node
+
+Executes external integrations via the FlowApp plugin system:
+
+```csharp
+public class BusinessAppScriptFlowAppNode : BusinessAppScriptNode
+{
+    public string AppKey { get; set; }              // e.g., "cal_com"
+    public string ActionKey { get; set; }           // e.g., "book_meeting"
+    public string? IntegrationId { get; set; }      // User's Cal.com credentials
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> SpeakingBeforeExecution { get; set; }
+    
+    public List<FlowAppNodeInput> Inputs { get; set; }
+}
+```
+
+**Example: Cal.com booking**
+
+```yaml
+AppKey: "cal_com"
+ActionKey: "book_meeting"
+IntegrationId: "user_calcom_integration_123"
+
+SpeakingBeforeExecution:
+  English: "Let me check availability in Cal.com..."
+  
+Inputs:
+  - Key: "attendee.email"
+    Value: "{{ variables.user_email }}"
+    IsAiGenerated: false
+    
+  - Key: "attendee.name"
+    Value: "{{ variables.user_name }}"
+    IsAiGenerated: true    # AI extracted this from conversation
+    
+  - Key: "start_time"
+    Value: "{{ variables.appointment_date }}"
+    IsAiGenerated: true
+```
+
+The FlowApp executes, returns data, and the script continues based on the output ports (success, failure, etc.).
+
+<Info>
+FlowApps are reusable C#/.NET plugins. Once installed, any script can use them without writing code. See the [FlowApp documentation](/developers/flowapp/overview) to build your own.
+</Info>
+
+### Custom tool node
+
+Executes HTTP-based custom tools:
+
+```csharp
+public class BusinessAppScriptCustomToolNode : BusinessAppScriptNode
+{
+    public string ToolId { get; set; }
+    
+    [KeepOriginalDictionaryKeyCase]
+    public Dictionary<string, string> ToolConfiguration { get; set; }
+}
+```
+
+This allows calling any REST API directly from your script without building a full FlowApp.
+
+## Edges and flow control
+
+Edges connect nodes and define the conversation flow:
+
+```csharp
+public class BusinessAppScriptEdge
+{
+    public string SourceNodeId { get; set; }
+    public string SourceNodePortId { get; set; }    // e.g., "success", "failure"
+    public string TargetNodeId { get; set; }
+    public string TargetNodePortId { get; set; }
+}
+```
+
+### Conditional branching
+
+Nodes can have multiple output ports:
+
+```
+[Check Availability FlowApp]
+        ↓         ↓
+   [available] [unavailable]
+        ↓         ↓
+   [Book Now]  [Suggest Times]
+```
+
+The FlowApp returns a result that determines which edge to follow.
+
+### Loops and retries
+
+Edges can create loops for retry logic:
+
+```
+[Collect PIN (DTMF)]
+        ↓        ↓
+   [correct] [incorrect]
+        ↓        ↓
+   [Success] [Counter++]
+                ↓
+           [If attempts < 3]
+                ↓
+          [Loop back to Collect PIN]
+```
+
+## Variables and state management
+
+Variables store conversation state across nodes:
+
+```csharp
+public class BusinessAppScriptVariable
+{
+    public string Key { get; set; }                    // e.g., "user_email"
+    public BusinessAppScriptVariableTypeENUM Type { get; set; }  // String, Number, Boolean
+    public string? DefaultValue { get; set; }
+    
+    public bool IsVisibleToAgent { get; set; } = true;      // Can AI see this?
+    public bool IsEditableByAI { get; set; } = false;      // Can AI modify this?
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Description { get; set; }
+}
+```
+
+### Variable types
+
+| Type | Purpose | Example |
+|------|---------|----------|
+| **String** | Text data | Email addresses, names, notes |
+| **Number** | Numeric data | Retry counts, prices, ages |
+| **Boolean** | True/false flags | Is verified, has account, wants SMS |
+
+### Visibility controls
+
+**IsVisibleToAgent** determines if the AI can see the variable:
+
+```yaml
+# AI can see and use in responses
+user_name:
+  Type: String
+  IsVisibleToAgent: true
+  IsEditableByAI: true
+  Description: "The customer's full name"
+
+# AI cannot see (secure data)
+user_pin:
+  Type: String
+  IsVisibleToAgent: false
+  IsEditableByAI: false
+  Description: "User's 4-digit PIN (encrypted)"
+```
+
+**IsEditableByAI** controls if the AI can modify it:
+
+```yaml
+# AI can extract and update
+appointment_date:
+  Type: String
+  IsVisibleToAgent: true
+  IsEditableByAI: true
+  
+# Read-only for AI (set by system)
+max_retry_attempts:
+  Type: Number
+  DefaultValue: "3"
+  IsVisibleToAgent: true
+  IsEditableByAI: false
+```
+
+<Tip>
+Use Scriban template syntax to reference variables in nodes: `{{ variables.user_name }}` or `{{ variables.retry_count }}`
+</Tip>
+
+## Script execution flow
+
+When a script runs:
+
+1. **Start node activates** when the script is loaded
+2. **Current node executes** its logic (AI generation, tool call, etc.)
+3. **Output port is selected** based on the result
+4. **Edge is followed** to the next node
+5. **Variables are updated** as nodes execute
+6. **Process repeats** until an End Call node or transfer occurs
+
+### Example execution trace
+
+```
+1. [Start] → Load script, initialize variables
+2. [AI Response: Greeting] → AI says: "Hi! How can I help you today?"
+3. [User Query: Intent] → User says: "I need to book an appointment"
+4. [Extract Intent] → AI sets variables.intent = "booking"
+5. [User Query: Date] → AI asks: "What date works for you?"
+6. [Extract Date] → User says: "Next Monday" → variables.date = "2026-03-09"
+7. [FlowApp: Check Availability] → Calls Cal.com API
+8. [Available Port] → API returns available slots
+9. [FlowApp: Book Meeting] → Creates the booking
+10. [AI Response: Confirmation] → AI says: "You're all set for Monday!"
+11. [End Call] → Conversation terminates
+```
+
+## Multi-script orchestration
+
+Scripts can interact with each other:
+
+### Add script to context
+
+Loads an additional script while keeping the current one active:
+
+```csharp
+public class BusinessAppScriptAddScriptToContextToolNode : BusinessAppScriptSystemToolNode
+{
+    public string TargetScriptId { get; set; }
+}
+```
+
+**Use case:** Add payment collection flow to appointment booking flow
+
+### Transfer to agent
+
+Hands the conversation to a different agent (and their scripts):
+
+```csharp
+public class BusinessAppScriptTransferToAgentToolNode : BusinessAppScriptSystemToolNode
+{
+    public string TargetAgentId { get; set; }
+}
+```
+
+**Use case:** Escalate technical support to supervisor agent
+
+<Note>
+When transferring, variables can be passed to the new agent/script if they're configured in both contexts.
+</Note>
+
+## Best practices
+
+### Keep scripts focused
+
+One script = one purpose:
+
+- ✅ "Appointment Booking Script"
+- ✅ "Payment Collection Script"
+- ✅ "Account Verification Script"
+- ❌ "Do Everything Script"
+
+### Use meaningful node names
+
+Your team will thank you:
+
+```yaml
+# Good names
+- "Collect Customer Email"
+- "Verify Email Format"
+- "Send Confirmation Email"
+
+# Bad names
+- "Node 1"
+- "User Input"
+- "Tool Call"
+```
+
+### Design for failure
+
+Always handle error paths:
+
+```
+[Call External API]
+    ↓         ↓
+[success] [failure]
+    ↓         ↓
+[Continue] [Apologize + Retry or Escalate]
+```
+
+### Test with real conversations
+
+The visual IDE helps, but test with actual voice/text:
+
+- Users will say unexpected things
+- AI might extract data incorrectly
+- External APIs will fail
+- Timing and latency matter
+
+### Use variables strategically
+
+Don't create variables for everything:
+
+```yaml
+# Good: Store data you need
+user_email: "Used for booking confirmation"
+retry_count: "Track failed attempts"
+
+# Unnecessary: Temporary data
+last_ai_response: "Not needed, system handles this"
+random_number: "Only create if actually used"
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build a script" icon="hammer" href="/building/visual-ide">
+    Step-by-step guide to creating your first conversation flow
+  </Card>
+  <Card title="Workflows" icon="arrows-split-up-and-left" href="/concepts/workflows">
+    Add deterministic action flows for complex logic
+  </Card>
+  <Card title="Tools" icon="wrench" href="/build/tools">
+    Learn about system tools and custom integrations
+  </Card>
+  <Card title="FlowApps" icon="plug" href="/developers/flowapp">
+    Build reusable plugins for external services
+  </Card>
+</CardGroup>

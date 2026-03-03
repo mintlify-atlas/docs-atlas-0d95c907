@@ -1,0 +1,330 @@
+---
+title: Multi-region deployment
+description: Deploy Iqra AI across multiple geographic regions for optimal latency and reliability
+---
+
+## Overview
+
+Iqra AI's multi-region architecture allows you to deploy geographically distributed infrastructure to minimize latency and improve reliability. The system routes sessions to the nearest compute node based on geographic proximity, enabling you to combat the physical limitations of network speed.
+
+This is particularly critical for real-time voice applications where every millisecond counts in the user experience.
+
+## Architecture
+
+### Region components
+
+Each region in Iqra AI consists of three core components:
+
+1. **Backend servers** - Handle agent logic, conversation processing, and business rules
+2. **Proxy servers** - Manage WebRTC/SIP connections and media streaming
+3. **S3 storage** - Store recordings, logs, and media files
+
+Regions are identified by a composite ID format: `{CountryCode}-{RegionName}` (e.g., `US-EAST`, `EU-CENTRAL`).
+
+<Note>
+The region management system is located in `IqraInfrastructure/Managers/Region/RegionManager.cs:66`.
+</Note>
+
+### Regional isolation
+
+Each region operates independently with its own:
+
+- Compute resources (Backend and Proxy nodes)
+- Storage infrastructure (S3-compatible object storage)
+- Maintenance and availability status
+- Configuration and API keys
+
+## Creating a region
+
+<Steps>
+  <Step title="Define region parameters">
+    Choose a country code and region name that clearly identifies the geographic location.
+
+    ```csharp
+    var countryCode = "US";
+    var regionName = "WEST";
+    ```
+  </Step>
+
+  <Step title="Create the region">
+    New regions are created in a safe, disabled state by default:
+
+    ```csharp
+    await regionManager.CreateRegion("US", "WEST");
+    ```
+
+    This creates region `US-WEST` with:
+    - Disabled status (prevents accidental traffic routing)
+    - Maintenance mode enabled
+    - No active servers
+  </Step>
+
+  <Step title="Configure S3 storage">
+    Each region requires its own S3-compatible storage:
+
+    ```csharp
+    var s3Config = new RegionS3StorageServerData {
+        Endpoint = "s3.us-west-1.amazonaws.com",
+        AccessKey = "your-access-key",
+        SecretKey = "your-secret-key",
+        UseSSL = true
+    };
+
+    await regionManager.UpdateRegionS3Config("US-WEST", s3Config);
+    ```
+  </Step>
+
+  <Step title="Add compute servers">
+    Deploy Backend and Proxy servers to handle traffic:
+
+    ```csharp
+    var serverConfig = new CreateUpdateServerRequestModel {
+        Endpoint = "backend-us-west-1.yourdomain.com",
+        Type = ServerTypeEnum.Backend,
+        APIKey = "generated-secure-api-key-min-32-chars",
+        SIPPort = 5060,
+        UseSSL = true,
+        IsDevelopmentServer = false
+    };
+
+    await regionManager.AddOrUpdateRegionServer(
+        "add", "US-WEST", null, serverConfig
+    );
+    ```
+
+    <Warning>
+    API keys must be at least 32 characters long. Generate cryptographically secure keys for production deployments.
+    </Warning>
+  </Step>
+
+  <Step title="Enable the region">
+    Once all infrastructure is configured and tested:
+
+    ```csharp
+    // Disable maintenance mode
+    await regionManager.DisableRegionMaintenance("US-WEST");
+
+    // Enable the region
+    await regionManager.EnableRegion("US-WEST");
+    ```
+  </Step>
+</Steps>
+
+## Server management
+
+### Adding servers
+
+Each region can contain multiple Backend and Proxy servers for horizontal scaling:
+
+```csharp
+var proxyConfig = new CreateUpdateServerRequestModel {
+    Endpoint = "proxy-us-west-1.yourdomain.com",
+    Type = ServerTypeEnum.Proxy,
+    APIKey = GenerateSecureKey(64),
+    SIPPort = 5060,
+    UseSSL = true
+};
+
+await regionManager.AddOrUpdateRegionServer(
+    "add", "US-WEST", null, proxyConfig
+);
+```
+
+### Server lifecycle
+
+Servers support granular lifecycle management:
+
+<Accordion title="Enable/disable servers">
+  Control traffic routing to individual servers:
+
+  ```csharp
+  // Disable a server (stops new sessions, allows existing to complete)
+  await regionManager.DisableRegionServer(
+      "US-WEST",
+      serverId,
+      publicReason: "Scheduled maintenance",
+      privateReason: "Kernel security update"
+  );
+
+  // Re-enable after maintenance
+  await regionManager.EnableRegionServer("US-WEST", serverId);
+  ```
+</Accordion>
+
+<Accordion title="Maintenance mode">
+  Put servers in maintenance mode without fully disabling them:
+
+  ```csharp
+  await regionManager.EnableRegionServerMaintenance(
+      "US-WEST",
+      serverId,
+      publicReason: "System update in progress",
+      privateReason: "Applying security patches"
+  );
+  ```
+</Accordion>
+
+<Accordion title="Safe deletion">
+  Servers can only be deleted when they meet strict safety criteria:
+
+  ```csharp
+  await regionManager.DeleteRegionServerSafe("US-WEST", serverId);
+  ```
+
+  Deletion will fail if:
+  - Server is not in disabled state
+  - Server is still reporting online status
+  - Server has active sessions
+</Accordion>
+
+## Region status management
+
+### Maintenance mode
+
+Use maintenance mode for planned updates without fully disabling the region:
+
+```csharp
+// Enable maintenance
+await regionManager.EnableRegionMaintenance(
+    "US-WEST",
+    publicReason: "Scheduled maintenance window",
+    privateReason: "Infrastructure upgrade"
+);
+
+// Disable maintenance
+await regionManager.DisableRegionMaintenance("US-WEST");
+```
+
+<Tip>
+The `publicReason` is visible to end users, while `privateReason` is for internal operations teams. Use public reasons that are customer-friendly.
+</Tip>
+
+### Disabling regions
+
+Temporarily or permanently disable regions:
+
+```csharp
+// Disable region
+await regionManager.DisableRegion(
+    "US-WEST",
+    publicReason: "Region temporarily unavailable",
+    privateReason: "Datacenter power issue"
+);
+
+// Re-enable
+await regionManager.EnableRegion("US-WEST");
+```
+
+## Best practices
+
+### Geographic distribution
+
+<Steps>
+  <Step title="Measure user distribution">
+    Analyze where your users are located geographically. Deploy regions close to your largest user populations.
+  </Step>
+
+  <Step title="Start with critical regions">
+    Begin with 1-2 regions in your primary markets before expanding globally.
+  </Step>
+
+  <Step title="Consider data residency">
+    For enterprise deployments, ensure you have regions in countries with data residency requirements (e.g., GCC nations, EU).
+  </Step>
+</Steps>
+
+### Capacity planning
+
+Plan server capacity based on expected concurrent sessions:
+
+- **Backend servers**: 50-100 concurrent calls per server (depending on hardware)
+- **Proxy servers**: 100-200 concurrent WebRTC connections per server
+- **Storage**: Estimate 1-5 MB per minute of recorded conversation
+
+### Failover strategy
+
+1. Deploy redundant servers in each region (minimum 2 Backend, 2 Proxy)
+2. Use health checks to detect failing nodes
+3. Configure automatic traffic rerouting when servers enter maintenance mode
+4. Maintain a secondary region for critical deployments
+
+### Security
+
+<Warning>
+Never reuse API keys across servers or regions. Each server must have a unique, cryptographically secure API key of at least 32 characters.
+</Warning>
+
+- Rotate API keys quarterly
+- Use different S3 credentials for each region
+- Implement network isolation between regions
+- Restrict database access to internal networks only
+
+## Monitoring regions
+
+Monitor regional health using the metrics system:
+
+```csharp
+var activeNodes = await serverMetricsManager.GetAllActiveNodesAsync();
+
+// Filter by region
+var usWestNodes = activeNodes.Where(n =>
+    (n is BackendServerStatusData b && b.RegionId == "US-WEST") ||
+    (n is ProxyServerStatusData p && p.RegionId == "US-WEST")
+);
+
+foreach (var node in usWestNodes) {
+    Console.WriteLine($"{node.NodeId}: {node.RuntimeStatus}");
+}
+```
+
+See [Monitoring and observability](/advanced/monitoring) for detailed metrics and alerting.
+
+## Deleting regions
+
+Region deletion requires strict safety checks:
+
+<Steps>
+  <Step title="Disable all servers">
+    Disable every server in the region and wait for active sessions to complete.
+  </Step>
+
+  <Step title="Disable the region">
+    Put the region itself in disabled state:
+
+    ```csharp
+    await regionManager.DisableRegion(
+        "US-WEST",
+        "Region decommissioned",
+        "Infrastructure migration complete"
+    );
+    ```
+  </Step>
+
+  <Step title="Verify no active nodes">
+    Ensure no servers are reporting status before deletion.
+  </Step>
+
+  <Step title="Delete safely">
+    ```csharp
+    var result = await regionManager.DeleteRegionSafe("US-WEST");
+    if (!result.IsSuccess) {
+        Console.WriteLine(result.ErrorMessage);
+    }
+    ```
+  </Step>
+</Steps>
+
+<Note>
+The deletion will fail with error `DeleteRegion:NODES_ONLINE` if any servers are still reporting status. This prevents accidental deletion of active infrastructure.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Monitoring" icon="chart-line" href="/advanced/monitoring">
+    Set up observability for your multi-region deployment
+  </Card>
+  <Card title="Scaling" icon="arrow-up-right-dots" href="/advanced/scaling">
+    Learn horizontal scaling strategies for high traffic
+  </Card>
+</CardGroup>

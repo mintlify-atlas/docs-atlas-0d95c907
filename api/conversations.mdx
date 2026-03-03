@@ -1,0 +1,419 @@
+---
+title: Conversations
+description: Retrieve conversation transcripts and call history
+---
+
+## Get conversations
+
+Retrieve a paginated list of conversation sessions with optional filtering.
+
+```http
+POST /api/v1/business/{businessId}/conversations
+```
+
+### Path parameters
+
+<ParamField path="businessId" type="integer" required>
+  The unique identifier for your business
+</ParamField>
+
+### Request body
+
+<ParamField body="Limit" type="integer" default="10">
+  Number of conversations to return per page (1-100)
+</ParamField>
+
+<ParamField body="NextCursor" type="string">
+  Cursor for the next page of results
+</ParamField>
+
+<ParamField body="PreviousCursor" type="string">
+  Cursor for the previous page of results
+</ParamField>
+
+<ParamField body="Filter" type="object">
+  Optional filters to narrow results
+  
+  <Expandable title="Filter properties">
+    <ParamField body="StartStartedDate" type="string">
+      ISO 8601 timestamp - filter conversations started after this date
+    </ParamField>
+    
+    <ParamField body="EndStartedDate" type="string">
+      ISO 8601 timestamp - filter conversations started before this date
+    </ParamField>
+    
+    <ParamField body="SessionStates" type="array">
+      Array of session states to filter by (e.g., `Active`, `Completed`, `Failed`)
+    </ParamField>
+    
+    <ParamField body="SessionInitiationTypes" type="array">
+      Array of initiation types (e.g., `Outbound`, `Inbound`, `Web`)
+    </ParamField>
+    
+    <ParamField body="SessionEndTypes" type="array">
+      Array of end types to filter by
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<ResponseField name="Success" type="boolean">
+  Indicates whether the request was successful
+</ResponseField>
+
+<ResponseField name="Data" type="object">
+  Paginated conversation results
+  
+  <Expandable title="Pagination fields">
+    <ResponseField name="Items" type="array">
+      Array of conversation objects
+    </ResponseField>
+    
+    <ResponseField name="NextCursor" type="string">
+      Cursor to fetch the next page (null if no more results)
+    </ResponseField>
+    
+    <ResponseField name="PreviousCursor" type="string">
+      Cursor to fetch the previous page (null if on first page)
+    </ResponseField>
+    
+    <ResponseField name="TotalCount" type="integer">
+      Total number of conversations matching the filter
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.iqra.ai/api/v1/business/12345/conversations \
+  -H "Authorization: Token YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "Limit": 20,
+    "Filter": {
+      "StartStartedDate": "2024-01-01T00:00:00Z",
+      "EndStartedDate": "2024-01-31T23:59:59Z",
+      "SessionStates": ["Completed"]
+    }
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.iqra.ai/api/v1/business/12345/conversations',
+  {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Token YOUR_API_KEY',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      Limit: 20,
+      Filter: {
+        StartStartedDate: '2024-01-01T00:00:00Z',
+        EndStartedDate: '2024-01-31T23:59:59Z',
+        SessionStates: ['Completed']
+      }
+    })
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://api.iqra.ai/api/v1/business/12345/conversations',
+    headers={
+        'Authorization': 'Token YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'Limit': 20,
+        'Filter': {
+            'StartStartedDate': '2024-01-01T00:00:00Z',
+            'EndStartedDate': '2024-01-31T23:59:59Z',
+            'SessionStates': ['Completed']
+        }
+    }
+)
+
+data = response.json()
+```
+</CodeGroup>
+
+## Get conversation
+
+Retrieve a specific conversation with full transcript, messages, and metadata.
+
+```http
+GET /api/v1/business/{businessId}/conversations/{sessionId}
+```
+
+### Path parameters
+
+<ParamField path="businessId" type="integer" required>
+  The unique identifier for your business
+</ParamField>
+
+<ParamField path="sessionId" type="string" required>
+  The unique session identifier for the conversation
+</ParamField>
+
+### Response
+
+<ResponseField name="Success" type="boolean">
+  Indicates whether the request was successful
+</ResponseField>
+
+<ResponseField name="Data" type="object">
+  Conversation details
+  
+  <Expandable title="Conversation properties">
+    <ResponseField name="Id" type="string">
+      Unique session identifier
+    </ResponseField>
+    
+    <ResponseField name="QueueId" type="string">
+      Queue ID if this was an outbound call
+    </ResponseField>
+    
+    <ResponseField name="Status" type="string">
+      Current conversation state (Active, Completed, Failed, etc.)
+    </ResponseField>
+    
+    <ResponseField name="StartTime" type="string">
+      ISO 8601 timestamp when conversation started
+    </ResponseField>
+    
+    <ResponseField name="EndTime" type="string">
+      ISO 8601 timestamp when conversation ended (null if active)
+    </ResponseField>
+    
+    <ResponseField name="EndType" type="string">
+      How the conversation ended (Normal, Hangup, Error, etc.)
+    </ResponseField>
+    
+    <ResponseField name="Clients" type="array">
+      Array of clients (callers) in the conversation
+      
+      <Expandable title="Client properties">
+        <ResponseField name="ClientId" type="string">
+          Unique client identifier
+        </ResponseField>
+        
+        <ResponseField name="ClientType" type="string">
+          Type of client (Phone, Web, etc.)
+        </ResponseField>
+        
+        <ResponseField name="JoinedAt" type="string">
+          When the client joined
+        </ResponseField>
+        
+        <ResponseField name="LeftAt" type="string">
+          When the client left (null if still connected)
+        </ResponseField>
+        
+        <ResponseField name="LeaveReason" type="string">
+          Reason for leaving
+        </ResponseField>
+        
+        <ResponseField name="AudioUrl" type="string">
+          Pre-signed URL to client's audio recording
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Agents" type="array">
+      Array of AI agents in the conversation
+      
+      <Expandable title="Agent properties">
+        <ResponseField name="AgentId" type="string">
+          Agent identifier
+        </ResponseField>
+        
+        <ResponseField name="AgentType" type="string">
+          Type of agent
+        </ResponseField>
+        
+        <ResponseField name="JoinedAt" type="string">
+          When the agent joined
+        </ResponseField>
+        
+        <ResponseField name="LeftAt" type="string">
+          When the agent left (null if still active)
+        </ResponseField>
+        
+        <ResponseField name="LeaveReason" type="string">
+          Reason for leaving
+        </ResponseField>
+        
+        <ResponseField name="AudioUrl" type="string">
+          Pre-signed URL to agent's audio recording
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Messages" type="array">
+      Complete conversation transcript
+      
+      <Expandable title="Message properties">
+        <ResponseField name="SenderId" type="string">
+          ID of the sender (client or agent)
+        </ResponseField>
+        
+        <ResponseField name="Role" type="string">
+          Sender role (User, Agent, System)
+        </ResponseField>
+        
+        <ResponseField name="Content" type="string">
+          Message text content
+        </ResponseField>
+        
+        <ResponseField name="Timestamp" type="string">
+          When the message was sent
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Logs" type="array">
+      Conversation event logs
+      
+      <Expandable title="Log properties">
+        <ResponseField name="Level" type="string">
+          Log level (Info, Warning, Error)
+        </ResponseField>
+        
+        <ResponseField name="Message" type="string">
+          Log message
+        </ResponseField>
+        
+        <ResponseField name="Timestamp" type="string">
+          When the event occurred
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example request
+
+<CodeGroup>
+```bash cURL
+curl https://api.iqra.ai/api/v1/business/12345/conversations/session_abc123 \
+  -H "Authorization: Token YOUR_API_KEY"
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.iqra.ai/api/v1/business/12345/conversations/session_abc123',
+  {
+    headers: {
+      'Authorization': 'Token YOUR_API_KEY'
+    }
+  }
+);
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.iqra.ai/api/v1/business/12345/conversations/session_abc123',
+    headers={'Authorization': 'Token YOUR_API_KEY'}
+)
+
+data = response.json()
+```
+</CodeGroup>
+
+### Example response
+
+```json
+{
+  "Success": true,
+  "Data": {
+    "Id": "session_abc123",
+    "QueueId": "queue_xyz789",
+    "Status": "Completed",
+    "StartTime": "2024-01-15T14:30:00Z",
+    "EndTime": "2024-01-15T14:35:30Z",
+    "EndType": "Normal",
+    "Clients": [
+      {
+        "ClientId": "client_123",
+        "ClientType": "Phone",
+        "JoinedAt": "2024-01-15T14:30:00Z",
+        "LeftAt": "2024-01-15T14:35:30Z",
+        "LeaveReason": "Hangup",
+        "AudioUrl": "https://s3.amazonaws.com/recordings/client_123.mp3"
+      }
+    ],
+    "Agents": [
+      {
+        "AgentId": "agent_xyz",
+        "AgentType": "AI",
+        "JoinedAt": "2024-01-15T14:30:02Z",
+        "LeftAt": "2024-01-15T14:35:30Z",
+        "AudioUrl": "https://s3.amazonaws.com/recordings/agent_xyz.mp3"
+      }
+    ],
+    "Messages": [
+      {
+        "SenderId": "agent_xyz",
+        "Role": "Agent",
+        "Content": "Hello! Thanks for calling. How can I help you today?",
+        "Timestamp": "2024-01-15T14:30:02Z"
+      },
+      {
+        "SenderId": "client_123",
+        "Role": "User",
+        "Content": "I'd like to know more about your pricing.",
+        "Timestamp": "2024-01-15T14:30:05Z"
+      }
+    ],
+    "Logs": [
+      {
+        "Level": "Info",
+        "Message": "Call connected successfully",
+        "Timestamp": "2024-01-15T14:30:00Z"
+      }
+    ]
+  }
+}
+```
+
+## Get outbound queue
+
+Retrieve outbound call queue metadata and status. See the full [Queue Management documentation](/api/conversations) for comprehensive queue operations.
+
+```http
+GET /api/v1/business/{businessId}/queues/outbound/{queueId}
+```
+
+For detailed information about queue operations, filtering, and pagination, refer to the [Queues API reference](/api/conversations).
+
+## Permissions required
+
+These endpoints require:
+
+- Valid API key with access to the specified business
+- `Conversations.ConversationPermissions` module permission with `Full` or `Retrieving` access
+- User and business must not be disabled
+- Business must have editing enabled
+
+## Notes
+
+- Audio URLs are pre-signed and expire after a period of time
+- Conversations are retained according to your data retention policy
+- Message timestamps are in UTC
+- Active conversations may not have complete message history until they're finished
+- Use pagination cursors for efficient data retrieval of large result sets

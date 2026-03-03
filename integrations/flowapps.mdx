@@ -1,0 +1,582 @@
+---
+title: FlowApp integrations
+description: Extend agent capabilities with plugin integrations using the FlowApp system
+---
+
+FlowApps are plugin-style integrations that extend your agents with external service capabilities. Unlike providers (LLM, TTS, STT) that handle core AI functions, FlowApps add custom actions and data sources to the conversation flow.
+
+## What are FlowApps?
+
+A FlowApp is a self-contained integration module that provides:
+
+- **Actions** - Operations the agent can execute (e.g., book a meeting, send an email)
+- **Data fetchers** - Dynamic data sources for UI dropdowns (e.g., list of calendars)
+- **Integration credentials** - Secure storage of API keys and configuration
+
+FlowApps appear as draggable nodes in the Script Builder, allowing non-technical users to add complex integrations without code.
+
+## Architecture
+
+### Core interface
+
+```csharp
+public interface IFlowApp
+{
+    string AppKey { get; }                        // Unique identifier (e.g., "cal_com")
+    string Name { get; }                          // Display name (e.g., "Cal.com")
+    string IconUrl { get; }                       // App icon URL
+    string? IntegrationType { get; }              // Links to admin integration
+    
+    IReadOnlyList<IFlowAction> Actions { get; }   // Available actions
+    IReadOnlyList<IFlowDataFetcher> DataFetchers { get; } // Data sources
+}
+```
+
+### Action interface
+
+```csharp
+public interface IFlowAction
+{
+    string ActionKey { get; }                     // Unique action ID
+    string Name { get; }                          // Display name
+    string Description { get; }                   // Help text
+    
+    Task<ActionExecutionResult> ExecuteAsync(
+        Dictionary<string, object> inputs,        // User-provided parameters
+        Dictionary<string, string> credentials    // Integration credentials
+    );
+}
+```
+
+### Data fetcher interface
+
+```csharp
+public interface IFlowDataFetcher
+{
+    string FetcherKey { get; }                    // Unique fetcher ID
+    string Name { get; }                          // Display name
+    
+    Task<List<DynamicOption>> FetchAsync(
+        Dictionary<string, string> credentials    // Integration credentials
+    );
+}
+```
+
+## Built-in FlowApps
+
+### Cal.com integration
+
+**App Key:** `cal_com`  
+**Implementation:** `CalComApp.cs`
+
+Integrate with Cal.com for meeting scheduling and calendar management.
+
+#### Available actions
+
+<Tabs>
+  <Tab title="Book meeting">
+    **Action Key:** `book_meeting`
+
+    Schedule a new meeting on a Cal.com calendar.
+
+    **Input parameters:**
+
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `eventTypeId` | number | Yes | Event type ID from Cal.com |
+    | `start` | datetime | Yes | Meeting start time (ISO 8601) |
+    | `attendeeName` | text | Yes | Attendee full name |
+    | `attendeeEmail` | email | Yes | Attendee email address |
+    | `attendeePhone` | text | No | Attendee phone number |
+    | `notes` | text | No | Meeting notes |
+    | `timezone` | text | No | Timezone (default: UTC) |
+
+    **Output:**
+
+    ```json
+    {
+      "success": true,
+      "bookingId": "abc123",
+      "bookingUid": "unique-uid",
+      "startTime": "2024-03-15T14:00:00Z",
+      "endTime": "2024-03-15T15:00:00Z",
+      "meetingUrl": "https://meet.google.com/xxx-yyyy-zzz"
+    }
+    ```
+
+    **Example use case:**
+
+    > **Caller:** "I'd like to schedule a consultation for next Tuesday at 2 PM."
+    > 
+    > **Agent:** *Executes `book_meeting` action with detected date/time*
+    > 
+    > **Agent:** "Perfect! I've scheduled your consultation for Tuesday, March 15th at 2:00 PM. You'll receive a confirmation email with the meeting link."
+  </Tab>
+
+  <Tab title="Get slots">
+    **Action Key:** `get_slots`
+
+    Retrieve available time slots for scheduling.
+
+    **Input parameters:**
+
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `eventTypeId` | number | Yes | Event type ID |
+    | `startDate` | date | Yes | Start of date range |
+    | `endDate` | date | Yes | End of date range |
+    | `timezone` | text | No | Timezone for results |
+
+    **Output:**
+
+    ```json
+    {
+      "success": true,
+      "slots": [
+        {
+          "time": "2024-03-15T14:00:00Z",
+          "available": true
+        },
+        {
+          "time": "2024-03-15T15:00:00Z",
+          "available": true
+        }
+      ]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Cancel booking">
+    **Action Key:** `cancel_booking`
+
+    Cancel an existing meeting.
+
+    **Input parameters:**
+
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `bookingId` | text | Yes | Booking ID to cancel |
+    | `cancellationReason` | text | No | Reason for cancellation |
+
+    **Output:**
+
+    ```json
+    {
+      "success": true,
+      "message": "Booking cancelled successfully"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Reschedule booking">
+    **Action Key:** `reschedule_booking`
+
+    Move an existing meeting to a new time.
+
+    **Input parameters:**
+
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `bookingId` | text | Yes | Booking ID to reschedule |
+    | `newStartTime` | datetime | Yes | New start time (ISO 8601) |
+    | `rescheduleReason` | text | No | Reason for rescheduling |
+
+    **Output:**
+
+    ```json
+    {
+      "success": true,
+      "bookingId": "abc123",
+      "newStartTime": "2024-03-16T14:00:00Z",
+      "newEndTime": "2024-03-16T15:00:00Z"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Get all bookings">
+    **Action Key:** `get_all_bookings`
+
+    Retrieve list of bookings.
+
+    **Input parameters:**
+
+    | Parameter | Type | Required | Description |
+    |-----------|------|----------|-------------|
+    | `status` | select | No | Filter: `upcoming`, `past`, `cancelled` |
+    | `limit` | number | No | Max results (default: 10) |
+
+    **Output:**
+
+    ```json
+    {
+      "success": true,
+      "bookings": [
+        {
+          "id": "abc123",
+          "title": "Consultation",
+          "startTime": "2024-03-15T14:00:00Z",
+          "attendees": ["john@example.com"]
+        }
+      ]
+    }
+    ```
+  </Tab>
+
+  <Tab title="Other actions">
+    **Additional actions:**
+
+    - **`get_booking`** - Retrieve single booking details
+    - **`add_guests`** - Add attendees to existing booking
+    - **`mark_absent`** - Mark attendee as no-show
+  </Tab>
+</Tabs>
+
+#### Data fetchers
+
+**`get_event_types`** - Fetches list of available event types
+
+Used to populate dropdowns in the Script Builder when configuring booking actions.
+
+**Output:**
+
+```json
+[
+  {
+    "key": "123",
+    "value": "30 Minute Consultation",
+    "metadata": {
+      "duration": 30,
+      "description": "Quick consultation call"
+    }
+  },
+  {
+    "key": "456",
+    "value": "1 Hour Strategy Session",
+    "metadata": {
+      "duration": 60,
+      "description": "Deep-dive strategy planning"
+    }
+  }
+]
+```
+
+#### Configuration
+
+To use Cal.com integration:
+
+1. **Create Cal.com account** at https://cal.com
+2. **Generate API key** in Settings → Developer → API Keys
+3. **Add integration** in Iqra AI Admin Dashboard:
+   - Integration Type: `cal_com`
+   - API Key: Your Cal.com API key
+4. **Configure in agent** - FlowApp becomes available in Script Builder
+
+## FlowApp discovery and registration
+
+FlowApps are automatically discovered at runtime:
+
+1. **Assembly scanning** - `FlowAppManager` uses reflection to find `IFlowApp` implementations
+2. **Dependency injection** - Apps can request services (e.g., `IHttpClientFactory`)
+3. **Registration** - Apps added to in-memory registry keyed by `AppKey`
+4. **Permission loading** - Database permissions merged with app definitions
+
+```csharp
+private void InitializeApps()
+{
+    var appType = typeof(IFlowApp);
+    var types = Assembly.GetExecutingAssembly()
+        .GetTypes()
+        .Where(p => appType.IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
+
+    foreach (var type in types)
+    {
+        var appInstance = (IFlowApp)ActivatorUtilities.CreateInstance(_serviceProvider, type);
+        _apps.Add(appInstance.AppKey, appInstance);
+    }
+}
+```
+
+See `FlowAppManager.cs:59-95` for implementation.
+
+## Using FlowApps in scripts
+
+FlowApps appear as action nodes in the Script Builder:
+
+1. **Drag FlowApp action** from sidebar into canvas
+2. **Configure inputs** using static values or variables
+3. **Map credentials** - System auto-injects integration credentials
+4. **Handle output** - Access returned data via output ports
+
+### Example: Booking flow
+
+```
+[User Message] → [LLM: Extract date/time] → [Cal.com: Get Slots] → [Condition: Slots available?]
+   ↓ Yes                                    ↓ No
+[Cal.com: Book Meeting]                [LLM: "No availability, suggest alternatives"]
+   ↓
+[LLM: "Meeting confirmed"]
+```
+
+### Variable mapping
+
+FlowApp inputs can use conversation variables:
+
+```json
+{
+  "eventTypeId": 123,
+  "start": "{{variables.extracted_datetime}}",
+  "attendeeName": "{{variables.caller_name}}",
+  "attendeeEmail": "{{variables.caller_email}}"
+}
+```
+
+Variables are resolved at execution time using the Scriban template engine.
+
+## Creating custom FlowApps
+
+### Step 1: Define the app class
+
+```csharp
+using IqraCore.Interfaces.Integration;
+using IqraCore.Interfaces.FlowApp;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.MyApp
+{
+    public class MyCustomApp : IFlowApp
+    {
+        public string AppKey => "my_custom_app";
+        public string Name => "My Custom App";
+        public string IconUrl => "https://example.com/icon.png";
+        public string? IntegrationType => "my_custom_app"; // Matches admin integration
+
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        public IReadOnlyList<IFlowAction> Actions { get; }
+        public IReadOnlyList<IFlowDataFetcher> DataFetchers { get; }
+
+        public MyCustomApp(IHttpClientFactory httpClientFactory)
+        {
+            _httpClientFactory = httpClientFactory;
+
+            Actions = new List<IFlowAction>
+            {
+                new MyCustomAction(this)
+            };
+
+            DataFetchers = new List<IFlowDataFetcher>();
+        }
+    }
+}
+```
+
+### Step 2: Implement actions
+
+```csharp
+public class MyCustomAction : IFlowAction
+{
+    private readonly MyCustomApp _app;
+
+    public string ActionKey => "my_action";
+    public string Name => "My Custom Action";
+    public string Description => "Does something cool";
+
+    public MyCustomAction(MyCustomApp app)
+    {
+        _app = app;
+    }
+
+    public async Task<ActionExecutionResult> ExecuteAsync(
+        Dictionary<string, object> inputs,
+        Dictionary<string, string> credentials)
+    {
+        // Extract inputs
+        var apiKey = credentials["apiKey"];
+        var param1 = inputs["param1"].ToString();
+
+        // Call external API
+        var client = _app.CreateClient();
+        client.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+        
+        var response = await client.PostAsync("/api/endpoint", /* payload */);
+        var result = await response.Content.ReadAsStringAsync();
+
+        // Return result
+        return new ActionExecutionResult
+        {
+            Success = true,
+            Data = new Dictionary<string, object>
+            {
+                { "result", result }
+            }
+        };
+    }
+}
+```
+
+### Step 3: Define integration in admin
+
+Create integration definition in `IqraInfrastructure/Managers/Integrations/IntegrationsManager.cs`:
+
+```csharp
+new IntegrationData
+{
+    Name = "My Custom App",
+    Description = "Integrate with My Custom App",
+    Type = new List<string> { "my_custom_app" },
+    Fields = new List<IntegrationFieldData>
+    {
+        new IntegrationFieldData
+        {
+            Id = "apiKey",
+            Name = "API Key",
+            Type = "password",
+            Required = true,
+            IsEncrypted = true
+        }
+    },
+    Help = new IntegrationHelpData
+    {
+        HelpUrl = "https://docs.example.com/api-key",
+        Description = "Get your API key from the developer dashboard"
+    }
+}
+```
+
+### Step 4: Test and deploy
+
+1. **Restart application** - FlowApp auto-registers
+2. **Add integration** in Admin Dashboard
+3. **Test in Script Builder** - Drag action node and configure
+4. **Verify execution** - Test with real API calls
+
+<Note>
+FlowApps support dependency injection. Request any registered service (e.g., `ILogger`, `IHttpClientFactory`, `IMemoryCache`) in the constructor.
+</Note>
+
+## Permission management
+
+FlowApps support granular permission control:
+
+### App-level permissions
+
+Disable entire app:
+
+```json
+{
+  "appKey": "cal_com",
+  "disabledAt": "2024-03-15T00:00:00Z",
+  "disabledPublicReason": "Temporarily unavailable for maintenance"
+}
+```
+
+### Action-level permissions
+
+Disable specific actions:
+
+```json
+{
+  "appKey": "cal_com",
+  "actionPermissions": {
+    "cancel_booking": {
+      "disabledAt": "2024-03-15T00:00:00Z",
+      "disabledPublicReason": "Cancellation temporarily disabled"
+    }
+  }
+}
+```
+
+Permissions are stored in MongoDB (`FlowAppData` collection) and merged with app definitions at runtime.
+
+## Security considerations
+
+### Credential handling
+
+- **Encryption** - API keys encrypted with AES-256 before storage
+- **Scoped access** - Credentials only accessible during action execution
+- **No logging** - Credentials never logged or exposed in errors
+
+### Input validation
+
+FlowApps should validate all inputs:
+
+```csharp
+if (!inputs.ContainsKey("requiredParam"))
+{
+    return new ActionExecutionResult
+    {
+        Success = false,
+        ErrorCode = "MISSING_PARAM",
+        ErrorMessage = "Required parameter 'requiredParam' not provided"
+    };
+}
+```
+
+### Rate limiting
+
+Implement rate limiting for external API calls:
+
+```csharp
+private static readonly SemaphoreSlim _rateLimiter = new(5, 5); // 5 concurrent requests
+
+public async Task<ActionExecutionResult> ExecuteAsync(...)
+{
+    await _rateLimiter.WaitAsync();
+    try
+    {
+        // Execute API call
+    }
+    finally
+    {
+        _rateLimiter.Release();
+    }
+}
+```
+
+## Best practices
+
+### Action design
+
+1. **Atomic operations** - Each action should do one thing well
+2. **Clear naming** - Use verb + noun (e.g., `book_meeting`, not `handle_calendar`)
+3. **Descriptive errors** - Return actionable error messages
+4. **Idempotency** - Support retries without side effects where possible
+
+### Data fetcher design
+
+1. **Caching** - Cache expensive fetcher results using `IMemoryCache`
+2. **Pagination** - Limit results to reasonable sizes (100-1000 items)
+3. **Filtering** - Support filtering via input parameters
+
+### Testing
+
+1. **Unit tests** - Test action logic in isolation
+2. **Integration tests** - Verify API integration with real credentials
+3. **Error scenarios** - Test network failures, API errors, invalid inputs
+
+## Roadmap
+
+Planned FlowApp integrations:
+
+- **Email** - SendGrid, Mailgun, AWS SES
+- **CRM** - Salesforce, HubSpot, Pipedrive
+- **Ticketing** - Zendesk, Freshdesk, Intercom
+- **Payments** - Stripe, Square, PayPal
+- **SMS** - Twilio, Vonage, Telnyx
+- **Databases** - PostgreSQL, MySQL, Airtable
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build conversation flows" href="/building/visual-ide">
+    Use FlowApps in the Script Builder
+  </Card>
+  <Card title="Integration management" href="/build/integrations">
+    Configure integration credentials
+  </Card>
+  <Card title="Custom actions" href="/developers/custom-actions">
+    Build your own FlowApp integrations
+  </Card>
+  <Card title="Script variables" href="/building/visual-ide/variables">
+    Map conversation data to action inputs
+  </Card>
+</CardGroup>

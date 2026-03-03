@@ -1,0 +1,590 @@
+---
+title: Interruptions
+description: Configure smart turn-taking and interruption handling for natural conversations
+---
+
+Interruption handling determines how your agent responds when users speak while the agent is talking. Iqra AI provides multiple strategies—from simple voice activity detection to LLM-based decision making—giving you full control over the conversation dynamics.
+
+## Why interruptions matter
+
+Humans naturally interrupt each other in conversation:
+
+- **Barge-in** - "Actually, I need to—"
+- **Backchannel** - "Uh-huh", "mm-hmm", "I see"
+- **Clarification** - "Wait, what was that last part?"
+- **Correction** - "No, that's not my address"
+
+Your agent needs to distinguish between:
+- Noise (ignore)
+- Backchannels (acknowledge but keep talking)
+- Real interruptions (stop and listen)
+
+## Configuration overview
+
+Interruption settings live in the agent configuration:
+
+```json
+{
+  "Interruptions": {
+    "UseTurnByTurnMode": false,
+    "IncludeInterruptedSpeechInTurnByTurnMode": null,
+    "TurnEnd": { /* When to stop listening */ },
+    "PauseTrigger": { /* When to pause speaking */ },
+    "Verification": { /* Verify if interruption is real */ }
+  }
+}
+```
+
+## Turn-by-turn mode
+
+The simplest approach: strict turn-taking with no interruptions allowed.
+
+<ParamField path="UseTurnByTurnMode" type="boolean" default="false">
+  Enable strict turn-taking
+  
+  - `true` - Agent speaks, waits for silence, then listens
+  - `false` - Users can interrupt mid-speech (barge-in enabled)
+</ParamField>
+
+<ParamField path="IncludeInterruptedSpeechInTurnByTurnMode" type="boolean" default="null">
+  When agent is interrupted, include what it was saying in context
+  
+  - `true` - AI knows what was cut off
+  - `false` - AI only sees what was actually spoken
+  - `null` - Use system default
+</ParamField>
+
+**When to use:**
+- Formal interactions (legal disclosures, compliance scripts)
+- Noisy environments where false interruptions are common
+- Simple IVR-style menus
+
+**Example:**
+```
+Agent: "Your account balance is $1,250. Your last transaction was..."
+[User tries to speak - ignored]
+Agent: "...a debit of $45 on March 3rd. Do you have any questions?"
+[Now user can speak]
+```
+
+## Turn end detection
+
+Determines when the user has finished speaking so the agent can respond.
+
+### VAD (Voice Activity Detection)
+
+**Type:** `VAD`
+
+Uses signal processing to detect speech vs. silence.
+
+<ParamField path="VadSpeechDurationMS" type="integer" default="150">
+  Minimum milliseconds of speech to register as "user started talking"
+</ParamField>
+
+<ParamField path="VadSilenceDurationMS" type="integer" default="300">
+  Milliseconds of silence to register as "user finished talking"
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "Type": "VAD",
+  "VadSpeechDurationMS": 150,
+  "VadSilenceDurationMS": 300
+}
+```
+
+**Pros:**
+- Fastest response time (no API calls)
+- Deterministic and predictable
+- Works offline
+
+**Cons:**
+- May cut off slow speakers
+- Can't distinguish between pause and completion
+- Sensitive to noise
+
+<Tip>
+Increase `VadSilenceDurationMS` to 500-700ms for elderly users or non-native speakers who pause mid-sentence.
+</Tip>
+
+### STT (Speech-to-Text)
+
+**Type:** `STT`
+
+Uses your STT provider's endpointing logic.
+
+**Configuration example:**
+```json
+{
+  "Type": "STT"
+}
+```
+
+**Pros:**
+- More accurate than VAD
+- Provider-optimized algorithms
+- Language-aware
+
+**Cons:**
+- Slightly slower than VAD
+- Depends on provider quality
+- Requires network round-trip
+
+**When to use:**
+Default for most conversational agents.
+
+### ML (Machine Learning)
+
+**Type:** `ML`
+
+Uses a specialized ML model trained to predict turn completion.
+
+<ParamField path="MLTurnEndVADMinimumSpeechDurationMS" type="integer" default="150">
+  Minimum speech duration before ML model activates
+</ParamField>
+
+<ParamField path="MLTurnEndVADMinimumSilenceDurationMS" type="integer" default="300">
+  Minimum silence before ML model evaluates
+</ParamField>
+
+<ParamField path="MlTurnEndFallbackMs" type="integer" default="2000">
+  Maximum wait time before forcing turn end
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "Type": "ML",
+  "MLTurnEndVADMinimumSpeechDurationMS": 150,
+  "MLTurnEndVADMinimumSilenceDurationMS": 300,
+  "MlTurnEndFallbackMs": 2000
+}
+```
+
+**Pros:**
+- Best at distinguishing pauses from completion
+- Adapts to speaking patterns
+- Reduces false triggers
+
+**Cons:**
+- Adds latency (model inference time)
+- Requires ML infrastructure
+- May need tuning per language
+
+**When to use:**
+Complex conversations where users speak in long, multi-clause sentences.
+
+### AI (LLM-based)
+
+**Type:** `AI`
+
+Uses an LLM to analyze if the user's statement is complete.
+
+<ParamField path="UseAgentLLM" type="boolean" default="null">
+  - `true` - Use the agent's configured LLM
+  - `false` - Use dedicated LLM (specify in `LLMIntegration`)
+</ParamField>
+
+<ParamField path="LLMIntegration" type="object">
+  Custom LLM configuration (if `UseAgentLLM: false`)
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "Type": "AI",
+  "UseAgentLLM": true
+}
+```
+
+**Pros:**
+- Semantic understanding of completion
+- Best for complex, multi-turn exchanges
+- Context-aware decisions
+
+**Cons:**
+- Highest latency (LLM API call)
+- Non-deterministic
+- Higher cost
+
+**When to use:**
+High-value conversations where perfect turn-taking is critical (therapy bots, executive assistants).
+
+<Warning>
+AI turn end detection adds 200-500ms latency. Only use when semantic accuracy justifies the delay.
+</Warning>
+
+## Pause trigger
+
+Determines when to pause the agent's speech if the user starts talking (barge-in detection).
+
+<ParamField path="PauseTrigger.Enabled" type="boolean" default="null">
+  Enable pause trigger (null = disabled)
+</ParamField>
+
+<ParamField path="PauseTrigger.Type" type="enum">
+  - `VAD` - Voice activity detection
+  - `STT` - Speech-to-text based
+</ParamField>
+
+### VAD pause trigger
+
+<ParamField path="VadDurationMS" type="integer">
+  Milliseconds of speech detected to trigger pause
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "PauseTrigger": {
+    "Type": "VAD",
+    "VadDurationMS": 300
+  }
+}
+```
+
+**Behavior:**
+```
+Agent: "Your account balance is $1,250 and your last trans—"
+[User speaks for 300ms]
+Agent: [pauses immediately]
+```
+
+### STT pause trigger
+
+<ParamField path="WordCount" type="integer">
+  Number of words transcribed to trigger pause
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "PauseTrigger": {
+    "Type": "STT",
+    "WordCount": 2
+  }
+}
+```
+
+**Behavior:**
+```
+Agent: "Your account balance is $1,250 and your last trans—"
+User: "Wait, stop" [2 words detected]
+Agent: [pauses]
+```
+
+**Comparison:**
+
+| Type | Latency | Accuracy | Use Case |
+|------|---------|----------|----------|
+| VAD | 300ms | Moderate | Fast-paced conversations |
+| STT | 500-800ms | High | Avoid false positives from noise |
+
+<Tip>
+Use STT pause trigger with `WordCount: 2` to ignore backchannels like "uh-huh" while catching real interruptions.
+</Tip>
+
+## Interruption verification
+
+After pausing, verify if the interruption was intentional or just noise/backchanneling.
+
+<ParamField path="Verification.Enabled" type="boolean" default="false">
+  Enable LLM-based verification
+</ParamField>
+
+<ParamField path="Verification.UseAgentLLM" type="boolean" default="true">
+  - `true` - Use agent's LLM
+  - `false` - Use dedicated LLM (specify in `LLMIntegration`)
+</ParamField>
+
+<ParamField path="Verification.LLMIntegration" type="object">
+  Custom LLM configuration (if `UseAgentLLM: false`)
+</ParamField>
+
+**Configuration example:**
+```json
+{
+  "Verification": {
+    "Enabled": true,
+    "UseAgentLLM": true
+  }
+}
+```
+
+**Behavior:**
+```
+Agent: "Your balance is $1,250 and your last—"
+User: "Uh-huh" [pause triggered]
+  ↓
+LLM analyzes: Is this a real interruption or backchannel?
+  ↓
+Decision: Backchannel
+  ↓
+Agent: [resumes] "—transaction was a debit of $45."
+```
+
+**vs.**
+
+```
+Agent: "Your balance is $1,250 and your last—"
+User: "Wait, that's wrong!" [pause triggered]
+  ↓
+LLM analyzes: Is this a real interruption or backchannel?
+  ↓
+Decision: Real interruption
+  ↓
+Agent: [stops completely] "I'm sorry, what was wrong?"
+```
+
+**Prompting:**
+
+The LLM receives:
+```
+Agent was saying: "Your balance is $1,250 and your last transaction..."
+User said: "Uh-huh"
+
+Is this:
+A) A backchannel acknowledgment (agent should continue)
+B) A real interruption (agent should stop and respond)
+```
+
+<Note>
+Verification adds ~300ms latency but dramatically improves conversation naturalness by preventing false interruptions.
+</Note>
+
+## Configuration strategies
+
+### Strategy 1: Fast and simple
+
+**Use case:** High-volume IVR, simple transactions
+
+```json
+{
+  "UseTurnByTurnMode": true,
+  "TurnEnd": {
+    "Type": "VAD",
+    "VadSpeechDurationMS": 150,
+    "VadSilenceDurationMS": 300
+  }
+}
+```
+
+**Characteristics:**
+- No barge-in
+- Fastest response time
+- Deterministic behavior
+
+### Strategy 2: Natural conversations
+
+**Use case:** Customer service, general assistants
+
+```json
+{
+  "UseTurnByTurnMode": false,
+  "TurnEnd": {
+    "Type": "STT"
+  },
+  "PauseTrigger": {
+    "Type": "STT",
+    "WordCount": 2
+  },
+  "Verification": {
+    "Enabled": true,
+    "UseAgentLLM": true
+  }
+}
+```
+
+**Characteristics:**
+- Barge-in enabled
+- Distinguishes backchannels from interruptions
+- Balanced latency and accuracy
+
+### Strategy 3: Maximum accuracy
+
+**Use case:** Therapy, coaching, high-stakes consultations
+
+```json
+{
+  "UseTurnByTurnMode": false,
+  "TurnEnd": {
+    "Type": "AI",
+    "UseAgentLLM": true
+  },
+  "PauseTrigger": {
+    "Type": "STT",
+    "WordCount": 3
+  },
+  "Verification": {
+    "Enabled": true,
+    "UseAgentLLM": false,
+    "LLMIntegration": {
+      "provider": "anthropic",
+      "model": "claude-3-opus"
+    }
+  }
+}
+```
+
+**Characteristics:**
+- Semantic understanding at all stages
+- Highest accuracy
+- Higher latency and cost (justified for high-value use cases)
+
+### Strategy 4: Noisy environments
+
+**Use case:** Call centers, outdoor applications
+
+```json
+{
+  "UseTurnByTurnMode": false,
+  "TurnEnd": {
+    "Type": "VAD",
+    "VadSpeechDurationMS": 200,
+    "VadSilenceDurationMS": 500
+  },
+  "PauseTrigger": {
+    "Type": "STT",
+    "WordCount": 4
+  },
+  "Verification": {
+    "Enabled": true,
+    "UseAgentLLM": true
+  }
+}
+```
+
+**Characteristics:**
+- Higher thresholds to avoid false positives
+- STT + verification reduce noise interruptions
+- Slightly slower but more reliable
+
+## Testing interruptions
+
+<Steps>
+  <Step title="Test backchannels">
+    While agent is speaking, say short acknowledgments:
+    - "Okay"
+    - "Mm-hmm"
+    - "I see"
+    
+    Agent should continue (if verification enabled).
+  </Step>
+  
+  <Step title="Test real interruptions">
+    While agent is speaking, say:
+    - "Wait, stop"
+    - "That's wrong"
+    - "I have a question"
+    
+    Agent should stop and respond.
+  </Step>
+  
+  <Step title="Test slow speakers">
+    Pause mid-sentence for 1-2 seconds.
+    
+    Agent should wait (not cut you off).
+  </Step>
+  
+  <Step title="Test noisy environment">
+    Play background noise or music.
+    
+    Agent should not treat noise as speech.
+  </Step>
+  
+  <Step title="Test turn-by-turn">
+    Try interrupting in turn-by-turn mode.
+    
+    Agent should ignore interruptions until finished.
+  </Step>
+</Steps>
+
+## Best practices
+
+### Match culture and context
+
+- **Western cultures** - More interruptions expected, enable barge-in
+- **Eastern cultures** - More respectful turn-taking, consider turn-by-turn mode
+- **Formal contexts** - Stricter turn-taking
+- **Casual contexts** - More flexible interruptions
+
+### Tune for audience
+
+- **Young adults** - Fast VAD thresholds (200ms silence)
+- **Elderly users** - Slow VAD thresholds (500-700ms silence)
+- **Non-native speakers** - STT or ML turn detection (better at handling pauses)
+
+### Provide feedback
+
+When paused, give audio cues:
+
+```json
+{
+  "AI Response": "[pause tone] Yes, how can I help?"
+}
+```
+
+Or use the agent's personality:
+
+```
+Agent: "Sorry to interrupt—you were saying?"
+```
+
+### Monitor false positives
+
+Track metrics:
+- Interruptions per conversation
+- Average interruption latency
+- Backchannel vs. real interruption ratio
+
+Adjust thresholds based on data.
+
+### Use dedicated LLMs for verification
+
+For high-traffic agents, use a faster/cheaper model for verification:
+
+```json
+{
+  "Verification": {
+    "Enabled": true,
+    "UseAgentLLM": false,
+    "LLMIntegration": {
+      "provider": "openai",
+      "model": "gpt-3.5-turbo"  // Fast and cheap
+    }
+  }
+}
+```
+
+Reserve your primary LLM (e.g., GPT-4) for conversation generation.
+
+## Latency breakdown
+
+| Configuration | Pause Detection | Turn End Detection | Verification | Total |
+|---------------|-----------------|--------------------|--------------|---------|
+| VAD only | ~100ms | ~100ms | - | ~200ms |
+| VAD + STT | ~100ms | ~300ms | - | ~400ms |
+| STT + Verification | ~300ms | ~300ms | ~300ms | ~900ms |
+| ML + Verification | ~200ms | ~400ms | ~300ms | ~900ms |
+| AI (full LLM) | ~400ms | ~500ms | ~300ms | ~1200ms |
+
+<Warning>
+Latencies above 500ms are noticeable to users. Only use AI/ML strategies when accuracy justifies the delay.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Agent configuration" href="/building/agent-configuration" icon="sliders">
+    Complete agent settings reference
+  </Card>
+  
+  <Card title="Visual IDE" href="/building/visual-ide" icon="diagram-project">
+    Build conversation scripts
+  </Card>
+  
+  <Card title="Integrations" href="/integrations/overview" icon="puzzle-piece">
+    Configure LLM and STT providers
+  </Card>
+</CardGroup>

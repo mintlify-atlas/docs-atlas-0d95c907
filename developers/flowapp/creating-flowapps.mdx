@@ -1,0 +1,491 @@
+---
+title: Creating a FlowApp
+description: Step-by-step guide to building custom FlowApp integrations
+---
+
+This guide walks through creating a complete FlowApp from scratch. We'll build a Cal.com integration as our example.
+
+## Project structure
+
+FlowApps are located in `IqraInfrastructure/Managers/FlowApp/Apps/`:
+
+```
+Apps/
+└── CalCom/
+    ├── CalComApp.cs                    # Main app definition
+    ├── Actions/
+    │   ├── BookMeetingAction.cs        # Action implementation
+    │   └── BookMeeting.json            # JSON Schema for action inputs
+    ├── Fetchers/
+    │   └── GetEventTypesByIdFetcher.cs # Dynamic dropdown data
+    └── Models/
+        └── CalComModels.cs             # Request/response DTOs
+```
+
+## Step 1: Create the main app class
+
+Create a class that implements `IFlowApp`:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/CalComApp.cs
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Interfaces.Integration;
+using Microsoft.Extensions.Logging;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom
+{
+    public class CalComApp : IFlowApp
+    {
+        public string AppKey => "cal_com";
+        public string Name => "Cal.com";
+        public string IconUrl => "https://cal.com/favicon.ico";
+        public string? IntegrationType => "cal_com"; // Links to admin dashboard
+
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<CalComApp> _logger;
+        private const string BaseUrl = "https://api.cal.com/";
+
+        public IReadOnlyList<IFlowAction> Actions { get; }
+        public IReadOnlyList<IFlowDataFetcher> DataFetchers { get; }
+
+        public CalComApp(IHttpClientFactory httpClientFactory, ILogger<CalComApp> logger)
+        {
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
+
+            // Initialize actions
+            Actions = new List<IFlowAction>
+            {
+                new BookMeetingAction(this),
+                new CancelBookingAction(this),
+                // ... more actions
+            };
+
+            // Initialize fetchers
+            DataFetchers = new List<IFlowDataFetcher>
+            {
+                new GetEventTypesByIdFetcher(this)
+            };
+        }
+
+        public HttpClient CreateClient()
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.BaseAddress = new Uri(BaseUrl);
+            return client;
+        }
+    }
+}
+```
+
+<Note>
+The `AppKey` must be unique across all FlowApps. Use lowercase snake_case by convention.
+</Note>
+
+### Constructor dependencies
+
+You can inject any registered service:
+
+- `IHttpClientFactory` - For making HTTP requests
+- `ILogger<T>` - For logging
+- Custom services from your DI container
+
+## Step 2: Define an action
+
+Actions perform the actual work. Create a partial class implementing `IFlowAction`:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeetingAction.cs
+using IqraCore.Entities.FlowApp;
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Models.FlowApp.Integration;
+using System.Text.Json;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Actions
+{
+    public partial class BookMeetingAction : IFlowAction
+    {
+        private readonly CalComApp _app;
+
+        public BookMeetingAction(CalComApp app)
+        {
+            _app = app;
+        }
+
+        public string ActionKey => "BookMeeting";
+        public string Name => "Book a Meeting";
+        public string Description => "Schedules a new booking on Cal.com.";
+
+        public IReadOnlyList<ActionOutputPort> GetOutputPorts()
+        {
+            return new List<ActionOutputPort>
+            {
+                new ActionOutputPort { Key = "success", Label = "Success (201)" },
+                new ActionOutputPort { Key = "conflict", Label = "Slot Taken (409)" },
+                new ActionOutputPort { Key = "error", Label = "Error" }
+            };
+        }
+
+        public async Task<ActionExecutionResult> ExecuteAsync(
+            JsonElement input, 
+            BusinessAppIntegrationDecryptedModel integration)
+        {
+            try
+            {
+                // 1. Extract credentials
+                var apiKey = integration.DecryptedFields["ApiKey"];
+                var client = _app.CreateClient();
+
+                // 2. Build request from validated input
+                var request = new CreateBookingRequest
+                {
+                    Start = input.GetProperty("start").GetString(),
+                    Attendee = new Attendee
+                    {
+                        Name = input.GetProperty("attendeeName").GetString(),
+                        Email = input.GetProperty("attendeeEmail").GetString(),
+                        TimeZone = input.TryGetProperty("attendeeTimeZone", out var tz) 
+                            ? tz.GetString() ?? "UTC" 
+                            : "UTC"
+                    }
+                };
+
+                // 3. Make API call
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/v2/bookings");
+                httpRequest.Content = new StringContent(
+                    JsonSerializer.Serialize(request), 
+                    System.Text.Encoding.UTF8, 
+                    "application/json"
+                );
+                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
+                httpRequest.Headers.Add("cal-api-version", "2024-08-13");
+                
+                var response = await client.SendAsync(httpRequest);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                // 4. Handle different outcomes
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = JsonSerializer.Deserialize<CalComResponse<BookingResponseData>>(responseContent);
+                    return ActionExecutionResult.SuccessPort("success", result?.Data);
+                }
+
+                if (response.StatusCode == HttpStatusCode.Conflict)
+                {
+                    return ActionExecutionResult.SuccessPort(
+                        "conflict", 
+                        new { message = "Time slot is no longer available." }
+                    );
+                }
+
+                return ActionExecutionResult.Failure(
+                    "API_ERROR", 
+                    $"Cal.com Error: {response.StatusCode} - {responseContent}"
+                );
+            }
+            catch (Exception ex)
+            {
+                return ActionExecutionResult.Failure("EXCEPTION", ex.Message);
+            }
+        }
+    }
+}
+```
+
+<Warning>
+Always mark action classes as `partial` - the `GetInputSchemaJson()` method is auto-generated by the `FlowAppSchemaGenerator`.
+</Warning>
+
+### Output ports
+
+Output ports define the possible execution paths:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeetingAction.cs:24-32
+public IReadOnlyList<ActionOutputPort> GetOutputPorts()
+{
+    return new List<ActionOutputPort>
+    {
+        new ActionOutputPort { Key = "success", Label = "Success (201)" },
+        new ActionOutputPort { Key = "conflict", Label = "Slot Taken (409)" },
+        new ActionOutputPort { Key = "error", Label = "Error" }
+    };
+}
+```
+
+- **success**: API call succeeded
+- **conflict**: Specific error case (slot unavailable)
+- **error**: Generic failure (handled automatically by `ActionExecutionResult.Failure`)
+
+## Step 3: Create the JSON schema
+
+Create a schema file with the **same base name** as your action (e.g., `BookMeetingAction.cs` → `BookMeeting.json`):
+
+```json IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeeting.json
+{
+  "type": "object",
+  "title": "Book a Meeting",
+  "required": ["start", "attendeeName", "attendeeEmail"],
+  "properties": {
+    "start": {
+      "type": "string",
+      "title": "Start Time",
+      "description": "ISO 8601 Date string (e.g. 2024-01-01T10:00:00Z)"
+    },
+    "attendeeName": {
+      "type": "string",
+      "title": "Attendee Name"
+    },
+    "attendeeEmail": {
+      "type": "string",
+      "title": "Attendee Email"
+    },
+    "attendeeTimeZone": {
+      "type": "string",
+      "title": "Attendee TimeZone",
+      "default": "UTC"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Additional Notes"
+    }
+  },
+  "oneOf": [
+    {
+      "title": "By Event ID",
+      "required": ["eventTypeId"],
+      "properties": {
+        "eventTypeId": {
+          "type": "integer",
+          "title": "Event Type ID",
+          "x-fetcher": "GetEventTypesById"
+        }
+      }
+    },
+    {
+      "title": "By User & Slug",
+      "required": ["username", "eventTypeSlug"],
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "Username"
+        },
+        "eventTypeSlug": {
+          "type": "string",
+          "title": "Event Type Slug"
+        }
+      }
+    }
+  ]
+}
+```
+
+<Note>
+The `x-fetcher` property links a field to a data fetcher for dynamic dropdowns. See [Schema Definition](/developers/flowapp/schema-definition) for details.
+</Note>
+
+## Step 4: Create a data fetcher
+
+Data fetchers populate dynamic dropdowns:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Fetchers/GetEventTypesByIdFetcher.cs
+using IqraCore.Entities.FlowApp;
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Models.FlowApp.Integration;
+using System.Net.Http.Json;
+using System.Text.Json;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Fetchers
+{
+    public class GetEventTypesByIdFetcher : IFlowDataFetcher
+    {
+        private readonly CalComApp _app;
+        
+        public GetEventTypesByIdFetcher(CalComApp app) { _app = app; }
+
+        public string FetcherKey => "GetEventTypesById";
+
+        public async Task<List<DynamicOption>> FetchOptionsAsync(
+            BusinessAppIntegrationDecryptedModel? integration, 
+            JsonElement context)
+        {
+            if (integration == null) return new();
+
+            try
+            {
+                var apiKey = integration.DecryptedFields["ApiKey"];
+                var client = _app.CreateClient();
+
+                var httpRequest = new HttpRequestMessage(HttpMethod.Get, "/v2/event-types");
+                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
+                httpRequest.Headers.Add("cal-api-version", "2024-06-14");
+                
+                var response = await client.SendAsync(httpRequest);
+                if (!response.IsSuccessStatusCode) return new();
+
+                var result = await response.Content.ReadFromJsonAsync<CalComResponse<List<EventTypeDto>>>();
+
+                return result?.Data?.Select(e => new DynamicOption
+                {
+                    Label = $"{e.Title} ({e.Length}m)",
+                    Value = e.Id,
+                    Description = $"ID: {e.Id}"
+                }).ToList() ?? new();
+            }
+            catch { return new(); }
+        }
+    }
+}
+```
+
+The `context` parameter contains the current form state, allowing dependent fetchers:
+
+```csharp
+// Fetch event types only for the selected username
+if (context.TryGetProperty("username", out var username))
+{
+    var user = username.GetString();
+    // Fetch event types for specific user
+}
+```
+
+## Step 5: Build and test
+
+<Steps>
+
+<Step title="Build the project">
+The `FlowAppSchemaGenerator` runs at build time and generates the `GetInputSchemaJson()` method:
+
+```csharp Generated code
+public partial class BookMeetingAction
+{
+    public string GetInputSchemaJson()
+    {
+        return "{\"type\":\"object\",\"title\":\"Book a Meeting\",...}";
+    }
+}
+```
+</Step>
+
+<Step title="Verify discovery">
+Check the logs on startup:
+
+```
+Initialized 1 Flow Apps.
+```
+
+If your app isn't discovered, verify:
+- Class implements `IFlowApp`
+- Class is not abstract or an interface
+- Class is in the same assembly as `FlowAppManager`
+</Step>
+
+<Step title="Test in the UI">
+1. Configure credentials in the admin dashboard
+2. Create a new agent script
+3. Add your FlowApp action to the flow
+4. Fill in the form and test execution
+</Step>
+
+</Steps>
+
+## Public apps (no authentication)
+
+For apps that don't require credentials:
+
+```csharp
+public class UtilityApp : IFlowApp
+{
+    public string AppKey => "utility";
+    public string Name => "Utility Functions";
+    public string IconUrl => "/icons/utility.svg";
+    public string? IntegrationType => null; // No integration required
+    
+    // ...
+}
+```
+
+Set `RequiresIntegration = false` in your actions:
+
+```csharp
+public class GetCountriesAction : IFlowAction
+{
+    public bool RequiresIntegration => false;
+    
+    public async Task<ActionExecutionResult> ExecuteAsync(
+        JsonElement input, 
+        BusinessAppIntegrationDecryptedModel? integration)
+    {
+        // integration will be null
+        // Fetch data from public API
+    }
+}
+```
+
+## Best practices
+
+<AccordionGroup>
+
+<Accordion title="Use descriptive action and fetcher keys">
+- Good: `BookMeeting`, `GetEventTypes`, `SendEmail`
+- Bad: `Action1`, `Fetch`, `DoStuff`
+
+Keys appear in logs and error messages.
+</Accordion>
+
+<Accordion title="Define meaningful output ports">
+Use specific ports for common error cases:
+
+```csharp
+new ActionOutputPort { Key = "conflict", Label = "Slot Already Booked" },
+new ActionOutputPort { Key = "not_found", Label = "Event Type Not Found" },
+new ActionOutputPort { Key = "rate_limit", Label = "Rate Limit Exceeded" }
+```
+
+This allows agents to handle errors gracefully.
+</Accordion>
+
+<Accordion title="Return structured data in results">
+Include relevant data in the result for downstream nodes:
+
+```csharp
+return ActionExecutionResult.SuccessPort("success", new {
+    bookingId = result.Id,
+    confirmationUrl = result.Url,
+    startTime = result.StartTime
+});
+```
+</Accordion>
+
+<Accordion title="Handle rate limits and retries">
+Implement retry logic with exponential backoff:
+
+```csharp
+if (response.StatusCode == HttpStatusCode.TooManyRequests)
+{
+    var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(60);
+    return ActionExecutionResult.Failure(
+        "RATE_LIMIT", 
+        $"Rate limited. Retry after {retryAfter.TotalSeconds}s"
+    );
+}
+```
+</Accordion>
+
+<Accordion title="Log errors with context">
+Use structured logging:
+
+```csharp
+_logger.LogError(
+    ex, 
+    "Failed to book meeting for {Email} at {StartTime}", 
+    attendeeEmail, 
+    startTime
+);
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<Card title="Schema definition" icon="file-code" href="/developers/flowapp/schema-definition">
+Learn advanced schema features like conditional fields, dynamic fetchers, and custom validation
+</Card>

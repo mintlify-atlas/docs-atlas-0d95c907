@@ -1,0 +1,518 @@
+---
+title: Script nodes
+description: Available node types in the Visual IDE script builder
+---
+
+Nodes are the building blocks of conversation scripts. Each node type serves a specific purpose in orchestrating the dialogue between your agent and users.
+
+## Node structure
+
+All nodes share common properties:
+
+<ResponseField name="Id" type="string" required>
+  Unique identifier for the node
+</ResponseField>
+
+<ResponseField name="NodeType" type="enum" required>
+  The type of node (determines behavior)
+</ResponseField>
+
+<ResponseField name="Position" type="object" required>
+  Canvas coordinates `{X: number, Y: number}`
+</ResponseField>
+
+## Available node types
+
+### Start node
+
+**Type:** `Start`
+
+The entry point for every script. Each script has exactly one Start Node, automatically created when you create a new script.
+
+**Configuration:** None (minimal node)
+
+**Behavior:**
+- Execution begins here when the script is activated
+- Has one output port connecting to the first conversation step
+- Cannot be deleted or duplicated
+
+**Use case:**
+Every script must have a Start Node as the root of the conversation flow.
+
+---
+
+### User query node
+
+**Type:** `UserQuery`
+
+Represents expected user input. Helps the AI understand what the user might say at this point in the conversation.
+
+<ParamField path="Query" type="object" required>
+  Multi-language description of expected user input
+  
+  ```json
+  {
+    "en": "What is the user asking about?",
+    "ar": "ماذا يسأل المستخدم؟"
+  }
+  ```
+</ParamField>
+
+<ParamField path="Examples" type="object">
+  Multi-language lists of example phrases
+  
+  ```json
+  {
+    "en": [
+      "I'd like to check my account balance",
+      "What's my current balance?",
+      "How much money do I have?"
+    ]
+  }
+  ```
+</ParamField>
+
+**Behavior:**
+- Waits for user speech input
+- AI analyzes if input matches the expected query
+- Provides context for natural language understanding
+
+**Best practices:**
+- Provide 3-5 diverse examples
+- Include variations (formal/informal, short/long)
+- Cover different phrasings of the same intent
+
+---
+
+### AI response node
+
+**Type:** `AIResponse`
+
+Defines what the agent should say or communicate to the user.
+
+<ParamField path="Response" type="object" required>
+  Multi-language instruction for the AI's response
+  
+  ```json
+  {
+    "en": "Greet the customer warmly and ask how you can help them today"
+  }
+  ```
+</ParamField>
+
+<ParamField path="Examples" type="object">
+  Multi-language lists of example responses
+  
+  ```json
+  {
+    "en": [
+      "Welcome to Acme Bank! I'm here to help you today. What can I assist you with?",
+      "Good morning! Thanks for calling. How may I help you?"
+    ]
+  }
+  ```
+</ParamField>
+
+**Behavior:**
+- AI generates response based on instruction and examples
+- Response is converted to speech via TTS
+- Variables can be referenced using `{{ variables.key }}` syntax
+
+**Template support:**
+
+Use Scriban templates in the Response field:
+
+```
+{{ if variables.customer_name }}
+  Welcome back, {{ variables.customer_name }}!
+{{ else }}
+  Welcome! How can I help you today?
+{{ end }}
+```
+
+---
+
+### System tool nodes
+
+**Type:** `ExecuteSystemTool`
+
+Execute built-in deterministic actions. These are non-AI operations that happen reliably.
+
+#### End call
+
+**ToolType:** `EndCall`
+
+Terminate the conversation.
+
+<ParamField path="Type" type="enum" required>
+  - `Immediate` - Hang up instantly
+  - `AfterMessage` - Speak closing message first
+</ParamField>
+
+<ParamField path="Messages" type="object">
+  Multi-language goodbye message (if Type is AfterMessage)
+</ParamField>
+
+**Example:**
+```json
+{
+  "Type": "AfterMessage",
+  "Messages": {
+    "en": "Thank you for calling. Goodbye!"
+  }
+}
+```
+
+#### DTMF input
+
+**ToolType:** `GetDTMFKeypadInput`
+
+Collect keypad input (phone digits) from the user.
+
+<ParamField path="Timeout" type="integer" default="5000">
+  Milliseconds to wait for input
+</ParamField>
+
+<ParamField path="RequireStartAsterisk" type="boolean" default="false">
+  Input must begin with `*`
+</ParamField>
+
+<ParamField path="RequireEndHash" type="boolean" default="false">
+  Input must end with `#`
+</ParamField>
+
+<ParamField path="MaxLength" type="integer" default="1">
+  Maximum number of digits
+</ParamField>
+
+<ParamField path="EncryptInput" type="boolean" default="false">
+  Store input encrypted (for PCI-DSS compliance)
+</ParamField>
+
+<ParamField path="VariableName" type="string">
+  Script variable to store the input
+</ParamField>
+
+<ParamField path="Outcomes" type="array">
+  Conditional outputs based on input value
+  
+  Each outcome has:
+  - `Value` - Multi-language expected input
+  - `PortId` - Output port for this value
+</ParamField>
+
+**Example use case:**
+Collecting a PIN securely for account verification.
+
+<Warning>
+Always use `EncryptInput: true` when collecting sensitive data like PINs or SSNs.
+</Warning>
+
+#### Go to node
+
+**ToolType:** `GoToNode`
+
+Jump to a specific node in the script (unconditional navigation).
+
+<ParamField path="GoToNodeId" type="string" required>
+  Target node ID to jump to
+</ParamField>
+
+**Use case:**
+Implement loops or restart conversation sections.
+
+#### Transfer to agent
+
+**ToolType:** `TransferToAgent`
+
+Transfer the conversation to another AI agent.
+
+<ParamField path="AgentId" type="string" required>
+  Target agent ID
+</ParamField>
+
+**Use case:**
+Escalate from a general agent to a specialist (e.g., sales to technical support).
+
+#### Transfer to human
+
+**ToolType:** `TransferToHuman`
+
+Transfer to a human operator (SIP transfer).
+
+<ParamField path="PhoneNumber" type="string" required>
+  Destination phone number
+</ParamField>
+
+<ParamField path="TransferType" type="enum">
+  - `Blind` - Immediate transfer
+  - `Warm` - Wait for human to answer first
+</ParamField>
+
+#### Send SMS
+
+**ToolType:** `SendSMS`
+
+Send an SMS message to the user.
+
+<ParamField path="PhoneNumberId" type="string" required>
+  Source phone number ID from your integration
+</ParamField>
+
+<ParamField path="Messages" type="object" required>
+  Multi-language SMS content
+</ParamField>
+
+**Example:**
+```json
+{
+  "Messages": {
+    "en": "Your appointment is confirmed for {{ variables.appointment_time }}. Reply CANCEL to reschedule."
+  }
+}
+```
+
+#### Add script to context
+
+**ToolType:** `AddScriptToContext`
+
+Dynamically inject another script into the agent's context.
+
+<ParamField path="ScriptId" type="string" required>
+  ID of the script to add
+</ParamField>
+
+**Use case:**
+Modular conversation design - load FAQ script when user asks questions, load payment script when ready to transact.
+
+#### Retrieve knowledge base
+
+**ToolType:** `RetrieveKnowledgeBase`
+
+Manually trigger RAG retrieval at a specific point.
+
+<ParamField path="Query" type="string">
+  Optional: Override query (defaults to last user message)
+</ParamField>
+
+<ParamField path="TopK" type="integer">
+  Number of chunks to retrieve
+</ParamField>
+
+**Use case:**
+On-demand knowledge retrieval when agent search strategy is not `OnEveryQuery`.
+
+---
+
+### Custom tool node
+
+**Type:** `ExecuteCustomTool`
+
+Execute a custom HTTP API tool you've defined.
+
+<ParamField path="ToolId" type="string" required>
+  ID of the custom tool definition
+</ParamField>
+
+<ParamField path="ToolConfiguration" type="object">
+  Key-value pairs for tool parameters
+  
+  ```json
+  {
+    "api_key": "your-api-key",
+    "endpoint": "users/lookup"
+  }
+  ```
+</ParamField>
+
+**Behavior:**
+- Sends HTTP request to your API
+- Waits for response
+- Response data available to AI in subsequent nodes
+
+**Use case:**
+Integrate with your backend systems (CRM lookup, inventory check, booking system).
+
+---
+
+### FlowApp node
+
+**Type:** `ExecuteFlowApp`
+
+Execute a FlowApp integration (pre-built connectors for popular services).
+
+<ParamField path="AppKey" type="string" required>
+  FlowApp identifier (e.g., `cal.com`, `hubspot`)
+</ParamField>
+
+<ParamField path="ActionKey" type="string" required>
+  Specific action (e.g., `create_booking`, `get_contact`)
+</ParamField>
+
+<ParamField path="IntegrationId" type="string">
+  User's integration credentials ID
+</ParamField>
+
+<ParamField path="SpeakingBeforeExecution" type="object">
+  Multi-language message to say while executing
+  
+  ```json
+  {
+    "en": "Let me check that for you..."
+  }
+  ```
+</ParamField>
+
+<ParamField path="Inputs" type="array" required>
+  Input parameters for the action
+  
+  Each input has:
+  - `Key` - Parameter name (e.g., `attendee.email`)
+  - `Value` - Static value or template
+  - `IsAiGenerated` - Let AI extract value from conversation
+  - `IsRedacted` - Hide from logs
+</ParamField>
+
+**Example:**
+```json
+{
+  "AppKey": "cal.com",
+  "ActionKey": "create_booking",
+  "Inputs": [
+    {
+      "Key": "attendee.email",
+      "Value": "{{ variables.customer_email }}",
+      "IsAiGenerated": false
+    },
+    {
+      "Key": "eventType",
+      "Value": "consultation",
+      "IsAiGenerated": false
+    }
+  ]
+}
+```
+
+<Tip>
+FlowApps eliminate the need to write custom HTTP integrations for popular services. Check the FlowApp marketplace for available connectors.
+</Tip>
+
+---
+
+## Node connections
+
+Nodes connect via **edges** that link output ports to input ports.
+
+### Single output
+
+Most nodes have one output port that connects to the next step:
+
+```
+Start → User Query → AI Response → End Call
+```
+
+### Multiple outputs
+
+Some nodes support conditional branching:
+
+**DTMF Input Outcomes:**
+```
+           ┌─ [Press 1] → Sales Agent
+DTMF Input ├─ [Press 2] → Support Agent  
+           └─ [Timeout] → End Call
+```
+
+**AI-driven branching:**
+```
+              ┌─ [Tool: Check Balance] → Balance Response
+User Query ─→ ├─ [Tool: Transfer Funds] → Transfer Flow
+              └─ [No Tool Needed] → General Response
+```
+
+## Node design patterns
+
+### Linear flow
+
+Simple question-answer sequences:
+
+```
+Start → AI: "What's your account number?" 
+      → User Query: [account number]
+      → AI: "Thank you, looking that up..."
+      → Custom Tool: [CRM Lookup]
+      → AI: "I found your account..."
+```
+
+### Conditional branching
+
+Different paths based on user input:
+
+```
+Start → AI: "Press 1 for Sales, 2 for Support"
+      → DTMF Input
+         ├─ [1] → Transfer to Sales Agent
+         └─ [2] → Transfer to Support Agent
+```
+
+### Loops
+
+Repeat until condition met:
+
+```
+Start → AI: "Please enter your 4-digit PIN"
+      → DTMF Input (max 4 digits)
+      → Custom Tool: [Validate PIN]
+         ├─ [Success] → Continue to Menu
+         └─ [Failure] → Go To Node: "Please enter PIN" (loop back)
+```
+
+### Modular composition
+
+```
+Main Script:
+  Start → AI: "How can I help?"
+        → User Query
+           ├─ [Mention: FAQ] → Add Script: FAQ Script
+           ├─ [Mention: Payment] → Add Script: Payment Script
+           └─ [Other] → General Response
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Provide examples">
+    Always add 3-5 examples to User Query and AI Response nodes. They dramatically improve accuracy.
+  </Step>
+  
+  <Step title="Handle timeouts">
+    Add fallback paths for DTMF timeouts and unrecognized speech.
+  </Step>
+  
+  <Step title="Keep responses focused">
+    Each AI Response should have one clear purpose. Break complex responses into multiple nodes.
+  </Step>
+  
+  <Step title="Use variables">
+    Store data in variables instead of expecting the AI to remember. The AI is probabilistic, variables are reliable.
+  </Step>
+  
+  <Step title="Test all paths">
+    Ensure every possible route through your script has been tested, including error cases.
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Visual IDE" href="/building/visual-ide" icon="diagram-project">
+    Learn the script editor interface
+  </Card>
+  
+  <Card title="Action flows" href="/building/action-flows" icon="code-branch">
+    Build deterministic workflows
+  </Card>
+  
+  <Card title="Secure sessions" href="/building/secure-sessions" icon="lock">
+    PCI-DSS compliant data collection
+  </Card>
+</CardGroup>

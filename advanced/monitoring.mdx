@@ -1,0 +1,415 @@
+---
+title: Monitoring and observability
+description: Monitor server health, performance metrics, and system status across your Iqra AI infrastructure
+---
+
+## Overview
+
+Iqra AI provides a comprehensive metrics and monitoring system that tracks the health and performance of all infrastructure components in real-time. The system collects hardware metrics, application status, and session data to give you full visibility into your deployment.
+
+All metrics are stored in Redis for real-time access and MongoDB for historical analysis.
+
+## Architecture
+
+### Metrics collection
+
+The monitoring system consists of three layers:
+
+1. **Hardware monitoring** - CPU, memory, and network utilization per server
+2. **Application monitoring** - Runtime status, session counts, queue depths
+3. **Historical tracking** - Time-series data for trend analysis
+
+<Note>
+The metrics system is implemented in `IqraInfrastructure/Managers/Server/Metrics/ServerMetricsManager.cs:8` and uses platform-specific hardware monitors for Linux and Windows.
+</Note>
+
+### Data flow
+
+```
+[Node Hardware Monitor]
+        ↓
+[ServerMetricsMonitor]
+        ↓
+[Redis Live Status Channel] → Real-time dashboard
+        ↓
+[MongoDB Historical Store] → Analytics & alerts
+```
+
+## Server status data
+
+Every node in the Iqra AI infrastructure reports standardized metrics:
+
+### Base metrics
+
+All server types report these core metrics:
+
+```csharp
+public class ServerStatusData {
+    public string NodeId { get; set; }
+    public AppNodeTypeEnum Type { get; set; }
+    public NodeRuntimeStatus RuntimeStatus { get; set; }
+    public string RuntimeStatusReason { get; set; }
+    public string Version { get; set; }
+    public DateTime LastUpdated { get; set; }
+
+    // Hardware metrics
+    public double CpuUsagePercent { get; set; }
+    public double MemoryUsagePercent { get; set; }
+    public double NetworkDownloadMbps { get; set; }
+    public double NetworkUploadMbps { get; set; }
+}
+```
+
+### Backend server metrics
+
+Backend nodes report additional session tracking:
+
+```csharp
+public class BackendServerStatusData : ServerStatusData {
+    public string RegionId { get; set; }
+    public int MaxConcurrentCallsCount { get; set; }
+    public int CurrentActiveTelephonySessionCount { get; set; }
+    public int CurrentActiveWebSessionCount { get; set; }
+}
+```
+
+### Proxy server metrics
+
+Proxy nodes track queue processing:
+
+```csharp
+public class ProxyServerStatusData : ServerStatusData {
+    public string RegionId { get; set; }
+    public int CurrentOutboundMarkedQueues { get; set; }
+    public int CurrentOutboundProcessingMarkedQueues { get; set; }
+    public int CurrentOutboundProcessedMarkedQueues { get; set; }
+}
+```
+
+## Runtime status
+
+Servers report their current operational state:
+
+<Accordion title="Starting">
+  The node is initializing and not yet ready to handle traffic. This is the initial state when a server boots.
+</Accordion>
+
+<Accordion title="Healthy">
+  The node is fully operational and accepting new sessions. All health checks are passing.
+</Accordion>
+
+<Accordion title="Degraded">
+  The node is operational but experiencing issues (high latency, elevated error rates, resource constraints). Consider investigating.
+</Accordion>
+
+<Accordion title="Draining">
+  The node is gracefully shutting down. It's completing existing sessions but not accepting new ones.
+</Accordion>
+
+<Accordion title="Offline">
+  The node has stopped reporting metrics and is considered unavailable.
+</Accordion>
+
+## Querying metrics
+
+### Get all active nodes
+
+Retrieve the current status of all infrastructure nodes:
+
+```csharp
+var serverMetricsManager = serviceProvider.GetRequiredService<ServerMetricsManager>();
+
+// Get all active nodes
+var activeNodes = await serverMetricsManager.GetAllActiveNodesAsync();
+
+foreach (var node in activeNodes) {
+    Console.WriteLine($"Node: {node.NodeId}");
+    Console.WriteLine($"Type: {node.Type}");
+    Console.WriteLine($"Status: {node.RuntimeStatus}");
+    Console.WriteLine($"CPU: {node.CpuUsagePercent:F2}%");
+    Console.WriteLine($"Memory: {node.MemoryUsagePercent:F2}%");
+    Console.WriteLine();
+}
+```
+
+### Get specific server status
+
+Query the status of a specific server by region and node ID:
+
+```csharp
+var status = await serverMetricsManager.GetServerStatusData(
+    regionId: "US-EAST",
+    nodeId: "backend-us-east-1"
+);
+
+if (status is BackendServerStatusData backendStatus) {
+    Console.WriteLine($"Active telephony sessions: {backendStatus.CurrentActiveTelephonySessionCount}");
+    Console.WriteLine($"Active web sessions: {backendStatus.CurrentActiveWebSessionCount}");
+    Console.WriteLine($"Total capacity: {backendStatus.MaxConcurrentCallsCount}");
+
+    var utilizationPercent = (backendStatus.CurrentActiveTelephonySessionCount +
+                              backendStatus.CurrentActiveWebSessionCount) /
+                             (double)backendStatus.MaxConcurrentCallsCount * 100;
+
+    Console.WriteLine($"Capacity utilization: {utilizationPercent:F2}%");
+}
+```
+
+### Check node availability
+
+Verify if specific node types are running:
+
+```csharp
+// Check if any backend nodes are running
+var backendRunning = await serverMetricsManager.CheckBackendNodeRunning(
+    "US-EAST", "backend-us-east-1"
+);
+
+// Check if any proxy nodes are running
+var proxyRunning = await serverMetricsManager.CheckProxyNodeRunning(
+    "US-EAST", "proxy-us-east-1"
+);
+
+// Check if background processing is running
+var backgroundRunning = await serverMetricsManager.CheckAnyBackgroundNodeRunning();
+
+// Count total worker nodes
+var (anyWorkerRunning, workerCount) = await serverMetricsManager.AreAnyWorkerNodesRunningAndCount();
+Console.WriteLine($"Worker nodes running: {workerCount}");
+```
+
+## Hardware metrics
+
+Iqra AI monitors system resources using platform-specific implementations:
+
+### Linux monitoring
+
+On Linux systems, metrics are collected from `/proc` filesystem:
+
+- **CPU usage**: Calculated from `/proc/stat` delta measurements
+- **Memory usage**: Read from `/proc/meminfo` (used vs total)
+- **Network throughput**: Measured from `/proc/net/dev` byte counters
+
+### Windows monitoring
+
+On Windows systems, metrics use Performance Counters:
+
+- **CPU usage**: `Processor(_Total)\% Processor Time`
+- **Memory usage**: `Memory\% Committed Bytes In Use`
+- **Network throughput**: Sum of all network interface bytes/sec
+
+<Tip>
+The hardware monitoring implementation is located in `IqraInfrastructure/Managers/Server/Metrics/Monitor/Hardware/` with separate `LinuxHardwareMonitor.cs` and `WindowsHardwareMonitor.cs` classes.
+</Tip>
+
+## Metrics publishing
+
+The `ServerMetricsMonitor` automatically publishes metrics at regular intervals:
+
+```csharp
+// Update and publish current metrics
+await serverMetricsMonitor.UpdateAndPublishStatusAsync();
+```
+
+This operation:
+
+1. Collects current hardware metrics from the platform monitor
+2. Updates the in-memory status object
+3. Publishes to Redis for real-time access
+4. Records to MongoDB every 1 minute for historical tracking
+
+<Warning>
+Historical metrics are recorded at 1-minute intervals to balance storage costs with data granularity. If you need higher resolution, adjust `_historicalRecordInterval` in `ServerMetricsMonitor.cs:24`.
+</Warning>
+
+## Setting runtime status
+
+Applications should update their runtime status based on operational state:
+
+```csharp
+serverMetricsMonitor.SetRuntimeStatus(
+    NodeRuntimeStatus.Healthy,
+    "All systems operational"
+);
+
+// During graceful shutdown
+serverMetricsMonitor.SetRuntimeStatus(
+    NodeRuntimeStatus.Draining,
+    "Completing existing sessions before shutdown"
+);
+
+// If experiencing issues
+serverMetricsMonitor.SetRuntimeStatus(
+    NodeRuntimeStatus.Degraded,
+    "Database connection pool exhausted"
+);
+```
+
+## Building dashboards
+
+### Real-time capacity monitoring
+
+Build a dashboard showing regional capacity:
+
+```csharp
+var activeNodes = await serverMetricsManager.GetAllActiveNodesAsync();
+
+var regionStats = activeNodes
+    .OfType<BackendServerStatusData>()
+    .GroupBy(n => n.RegionId)
+    .Select(g => new {
+        RegionId = g.Key,
+        TotalCapacity = g.Sum(n => n.MaxConcurrentCallsCount),
+        ActiveSessions = g.Sum(n => n.CurrentActiveTelephonySessionCount +
+                                    n.CurrentActiveWebSessionCount),
+        NodeCount = g.Count(),
+        AvgCpuUsage = g.Average(n => n.CpuUsagePercent),
+        AvgMemoryUsage = g.Average(n => n.MemoryUsagePercent)
+    });
+
+foreach (var region in regionStats) {
+    var utilization = (region.ActiveSessions / (double)region.TotalCapacity) * 100;
+
+    Console.WriteLine($"Region: {region.RegionId}");
+    Console.WriteLine($"  Nodes: {region.NodeCount}");
+    Console.WriteLine($"  Capacity: {region.ActiveSessions}/{region.TotalCapacity} ({utilization:F1}%)");
+    Console.WriteLine($"  Avg CPU: {region.AvgCpuUsage:F1}%");
+    Console.WriteLine($"  Avg Memory: {region.AvgMemoryUsage:F1}%");
+    Console.WriteLine();
+}
+```
+
+### Health check endpoint
+
+Implement a health check endpoint for load balancers:
+
+```csharp
+app.MapGet("/health", async (ServerMetricsManager metricsManager) => {
+    var status = await metricsManager.GetServerStatusData(
+        Environment.GetEnvironmentVariable("REGION_ID"),
+        Environment.GetEnvironmentVariable("NODE_ID")
+    );
+
+    if (status == null) {
+        return Results.Problem("Metrics not available", statusCode: 503);
+    }
+
+    if (status.RuntimeStatus != NodeRuntimeStatus.Healthy) {
+        return Results.Problem(
+            status.RuntimeStatusReason,
+            statusCode: 503
+        );
+    }
+
+    // Check resource utilization
+    if (status.CpuUsagePercent > 90 || status.MemoryUsagePercent > 90) {
+        return Results.Problem(
+            "Resource utilization critical",
+            statusCode: 503
+        );
+    }
+
+    return Results.Ok(new {
+        status = "healthy",
+        version = status.Version,
+        uptime = DateTime.UtcNow - status.LastUpdated
+    });
+});
+```
+
+## Alerting strategies
+
+### Critical alerts
+
+Set up alerts for conditions requiring immediate attention:
+
+<Steps>
+  <Step title="Node offline">
+    Alert when a node stops reporting metrics for more than 30 seconds.
+  </Step>
+
+  <Step title="Resource exhaustion">
+    Alert when CPU or memory usage exceeds 90% for more than 5 minutes.
+  </Step>
+
+  <Step title="Capacity threshold">
+    Alert when regional capacity utilization exceeds 80%.
+  </Step>
+
+  <Step title="Runtime status degraded">
+    Alert when any node enters Degraded or Draining state unexpectedly.
+  </Step>
+</Steps>
+
+### Warning alerts
+
+Set up warnings for conditions that may require investigation:
+
+- CPU usage > 70% for more than 10 minutes
+- Memory usage > 75% for more than 10 minutes
+- Regional capacity utilization > 60%
+- Network throughput exceeding expected baseline by 50%
+
+## Metrics retention
+
+Plan your metrics retention based on compliance and analysis needs:
+
+| Time Range | Resolution | Use Case |
+|------------|------------|----------|
+| Last 24 hours | 1 minute | Real-time troubleshooting |
+| Last 7 days | 5 minutes | Recent trend analysis |
+| Last 30 days | 1 hour | Capacity planning |
+| Last 12 months | 1 day | Long-term trends |
+
+<Tip>
+Implement a MongoDB TTL index to automatically expire old historical records based on your retention policy.
+</Tip>
+
+## Best practices
+
+### Metric collection
+
+1. **Keep intervals consistent** - Use the default 1-minute interval for historical recording unless you have specific requirements
+2. **Monitor the monitors** - Set up alerts if the metrics system itself stops reporting
+3. **Use tags consistently** - Always include region and node identifiers in queries
+
+### Performance
+
+1. **Cache active node lists** - Don't query all active nodes on every request; cache for 5-10 seconds
+2. **Aggregate in the database** - Use MongoDB aggregation pipelines for historical analysis
+3. **Limit real-time queries** - Only query specific nodes when needed; use the map view for bulk access
+
+### Troubleshooting
+
+<Accordion title="Metrics not appearing">
+  Verify:
+  - Redis is accessible and running
+  - ServerMetricsMonitor service is initialized
+  - Hardware monitor is supported on the platform
+  - No exceptions in application logs
+</Accordion>
+
+<Accordion title="Stale metrics">
+  Check:
+  - Network connectivity between nodes and Redis
+  - Clock synchronization (NTP) across servers
+  - ServerMetricsMonitorService is running
+</Accordion>
+
+<Accordion title="High memory usage from metrics">
+  Redis stores only current status; historical data is in MongoDB. If Redis memory is high:
+  - Verify nodes are cleaning up status on shutdown
+  - Check for zombie node entries in Redis
+  - Implement TTL on Redis keys (30 seconds recommended)
+</Accordion>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-region" icon="globe" href="/advanced/multi-region">
+    Learn about deploying across multiple regions
+  </Card>
+  <Card title="Scaling" icon="arrow-up-right-dots" href="/advanced/scaling">
+    Horizontal scaling strategies for high traffic
+  </Card>
+</CardGroup>

@@ -1,0 +1,449 @@
+---
+title: Telephony provider integrations
+description: Deploy voice agents via Twilio, Telnyx, Vonage, or direct SIP trunking
+---
+
+Iqra AI supports deployment across multiple telephony providers and protocols. Connect your agents to the public phone network via SIP trunking or use WebRTC for browser/mobile integration.
+
+## Supported providers
+
+<CardGroup cols={2}>
+  <Card title="Twilio" icon="phone">
+    Industry-leading CPaaS with global coverage
+  </Card>
+  <Card title="Telnyx" icon="tower-cell">
+    High-performance SIP trunking and SMS
+  </Card>
+  <Card title="Vonage" icon="wave-square">
+    Enterprise voice and messaging platform
+  </Card>
+  <Card title="SIP / ModemTel" icon="network-wired">
+    Direct SIP trunk connections
+  </Card>
+</CardGroup>
+
+## Provider configurations
+
+<Tabs>
+  <Tab title="Twilio">
+    ### Twilio Voice
+
+    **Implementation:** `TwilioManager.cs`
+
+    Industry-leading communications platform with support for voice, SMS, and video.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `accountSid` | text | Yes | Twilio account SID from console.twilio.com |
+    | `authToken` | password | Yes | Twilio auth token |
+    | `phoneNumberId` | text | Yes | Phone number SID (starts with `PN...`) |
+    | `webhookUrl` | text | Yes | Your Iqra AI webhook endpoint |
+
+    #### Setup steps
+
+    1. **Purchase phone number**
+       - Go to https://console.twilio.com/us1/develop/phone-numbers
+       - Buy a number with Voice capabilities
+       - Copy the Phone Number SID
+
+    2. **Configure webhook**
+       - In phone number settings, set Voice Configuration:
+       - **When a call comes in:** Webhook (HTTP POST)
+       - **URL:** `https://your-iqra-instance.com/api/telephony/twilio/incoming`
+       - **HTTP Method:** POST
+
+    3. **Set credentials**
+       - Copy Account SID and Auth Token from dashboard
+       - Add to Iqra AI integration settings
+
+    #### TwiML integration
+
+    Iqra AI automatically generates TwiML responses for call control:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+      <Connect>
+        <Stream url="wss://your-iqra-instance.com/stream/{callId}" />
+      </Connect>
+    </Response>
+    ```
+
+    This establishes a WebSocket connection for real-time audio streaming.
+
+    #### Supported features
+
+    - **Inbound calls** - Route to specific agents
+    - **Outbound calls** - Initiate calls programmatically
+    - **Call recording** - Record conversations for compliance
+    - **DTMF input** - Capture touchtone keypad input
+    - **Call transfer** - Transfer to external numbers
+    - **Conference calls** - Multi-party conversations
+
+    <Note>
+    Twilio charges per-minute rates that vary by country. Check [Twilio pricing](https://www.twilio.com/voice/pricing) for your target markets.
+    </Note>
+
+    #### Phone number capabilities
+
+    When purchasing numbers, ensure they support:
+
+    - **Voice** - Required for calls
+    - **SMS** - Optional, for text integration
+    - **MMS** - Optional, for media messages
+
+    #### Global availability
+
+    Twilio supports phone numbers in 100+ countries. Some markets require regulatory compliance:
+
+    - **US/Canada** - No special requirements
+    - **EU** - GDPR compliance
+    - **UK** - Business verification
+    - **Australia** - Business registration
+
+    See [Twilio Regulatory](https://www.twilio.com/guidelines/regulatory) for details.
+  </Tab>
+
+  <Tab title="Telnyx">
+    ### Telnyx Voice
+
+    **Implementation:** `TelnyxManager.cs`
+
+    High-performance SIP trunking with competitive pricing and global reach.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Telnyx API key from portal.telnyx.com |
+    | `phoneNumber` | text | Yes | Phone number in E.164 format (+1234567890) |
+    | `connectionId` | text | Yes | TeXML connection ID |
+    | `webhookUrl` | text | Yes | Your Iqra AI webhook endpoint |
+
+    #### Setup steps
+
+    1. **Create Telnyx account**
+       - Sign up at https://portal.telnyx.com
+       - Verify your identity (required for compliance)
+
+    2. **Purchase phone number**
+       - Go to Numbers → Phone Numbers → Buy Numbers
+       - Search by area code or country
+       - Enable Voice capabilities
+
+    3. **Create TeXML application**
+       - Go to Voice → TeXML Applications
+       - Create new application
+       - Set webhook URL: `https://your-iqra-instance.com/api/telephony/telnyx/incoming`
+       - Copy the Connection ID
+
+    4. **Configure phone number**
+       - Assign phone number to TeXML application
+       - Set voice settings to "TeXML"
+
+    5. **Generate API key**
+       - Go to Auth → API Keys
+       - Create new key with Voice permissions
+       - Copy and store securely
+
+    #### TeXML integration
+
+    Telnyx uses TeXML (similar to TwiML) for call control:
+
+    ```xml
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+      <Stream url="wss://your-iqra-instance.com/stream/{callId}" />
+    </Response>
+    ```
+
+    #### Supported features
+
+    - **Inbound/outbound calls** - Full call control
+    - **Real-time audio streaming** - WebSocket audio
+    - **DTMF detection** - Keypad input
+    - **Call recording** - Cloud recordings
+    - **Number porting** - Bring existing numbers
+
+    <Note>
+    Telnyx offers pay-as-you-go pricing with no monthly minimums, making it cost-effective for variable call volumes.
+    </Note>
+
+    #### Compliance requirements
+
+    Telnyx requires identity verification for:
+
+    - **US toll-free numbers** - Business verification
+    - **US local numbers** - Address verification
+    - **International numbers** - Country-specific requirements
+
+    See [Telnyx Compliance](https://telnyx.com/resources/regulatory-compliance) for details.
+  </Tab>
+
+  <Tab title="Vonage">
+    ### Vonage Voice API
+
+    **Implementation:** `VonageManager.cs`
+
+    Enterprise-grade voice and messaging platform (formerly Nexmo).
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | text | Yes | Vonage API key from dashboard.nexmo.com |
+    | `apiSecret` | password | Yes | Vonage API secret |
+    | `applicationId` | text | Yes | Voice application ID |
+    | `privateKey` | password | Yes | Private key for JWT authentication |
+    | `phoneNumber` | text | Yes | Virtual number in E.164 format |
+    | `webhookUrl` | text | Yes | Your Iqra AI webhook endpoint |
+
+    #### Setup steps
+
+    1. **Create Vonage account**
+       - Sign up at https://dashboard.nexmo.com
+       - Complete identity verification
+
+    2. **Create voice application**
+       - Go to Applications → Create new application
+       - Enable Voice capabilities
+       - Set Event URL: `https://your-iqra-instance.com/api/telephony/vonage/events`
+       - Set Answer URL: `https://your-iqra-instance.com/api/telephony/vonage/answer`
+       - Download the private key file
+
+    3. **Purchase virtual number**
+       - Go to Numbers → Buy numbers
+       - Select country and features
+       - Link number to your voice application
+
+    4. **Configure credentials**
+       - Copy API Key and Secret from Settings
+       - Copy Application ID from application page
+       - Paste private key content
+
+    #### NCCO integration
+
+    Vonage uses NCCO (Nexmo Call Control Objects) for call control:
+
+    ```json
+    [
+      {
+        "action": "connect",
+        "endpoint": [
+          {
+            "type": "websocket",
+            "uri": "wss://your-iqra-instance.com/stream/{callId}",
+            "content-type": "audio/l16;rate=16000"
+          }
+        ]
+      }
+    ]
+    ```
+
+    #### Supported features
+
+    - **Inbound/outbound calls** - Global coverage
+    - **WebSocket audio** - Real-time streaming
+    - **DTMF collection** - Input capture
+    - **Call recording** - Compliance recordings
+    - **Advanced routing** - Geographic routing
+
+    <Warning>
+    Vonage requires JWT authentication for API requests. Ensure your private key is stored securely and never committed to version control.
+    </Warning>
+  </Tab>
+
+  <Tab title="SIP / ModemTel">
+    ### Direct SIP Trunking
+
+    **Implementation:** `ModemTelManager.cs` / `SipCallManager.cs`
+
+    Connect via standard SIP protocol for maximum control and flexibility.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `sipUri` | text | Yes | SIP URI (e.g., `sip:user@provider.com`) |
+    | `username` | text | Yes | SIP authentication username |
+    | `password` | password | Yes | SIP authentication password |
+    | `domain` | text | Yes | SIP domain/realm |
+    | `proxy` | text | No | Outbound proxy server |
+    | `port` | number | No | SIP port (default: 5060) |
+    | `transport` | select | No | `udp`, `tcp`, or `tls` (default: udp) |
+
+    #### Setup requirements
+
+    1. **SIP trunk provider**
+       - Contract with a SIP trunk provider
+       - Obtain SIP credentials and domain
+       - Configure DID (phone number) routing
+
+    2. **Network configuration**
+       - Open firewall ports: 5060 (SIP), 10000-20000 (RTP)
+       - Configure NAT traversal if needed
+       - Set up STUN/TURN servers for WebRTC
+
+    3. **Iqra AI configuration**
+       - Add SIP credentials to integration
+       - Configure codec preferences (G.711 μ-law recommended)
+       - Set up call routing rules
+
+    #### Supported codecs
+
+    - **G.711 μ-law** - 64kbps, telephony standard (recommended)
+    - **G.711 a-law** - 64kbps, European standard
+    - **G.729** - 8kbps, compressed (requires license)
+    - **Opus** - Variable bitrate, high quality
+
+    #### SIP security
+
+    Best practices for secure SIP:
+
+    - **Use TLS transport** - Encrypt signaling
+    - **SRTP** - Encrypt media (RTP)
+    - **IP whitelisting** - Restrict source IPs
+    - **Strong passwords** - Prevent brute force
+    - **Fail2ban** - Auto-block attackers
+
+    <Note>
+    Direct SIP integration provides the lowest latency and highest control but requires more technical expertise than managed providers like Twilio.
+    </Note>
+
+    #### Common SIP providers
+
+    Compatible SIP trunk providers include:
+
+    - **Bandwidth.com** - Enterprise SIP trunking
+    - **Flowroute** - Developer-friendly SIP
+    - **VoIP.ms** - Retail SIP services
+    - **Simwood** - UK/EU SIP provider
+    - **Any RFC 3261-compliant provider**
+  </Tab>
+</Tabs>
+
+## Architecture overview
+
+### Call flow
+
+1. **Inbound call arrives** - Provider routes to Iqra AI webhook
+2. **Agent selection** - System identifies target agent based on DID
+3. **WebSocket establishment** - Real-time audio stream opens
+4. **Audio processing** - STT transcribes incoming audio
+5. **LLM processing** - Language model generates response
+6. **TTS synthesis** - Text converted to speech
+7. **Audio streaming** - Response audio sent to caller
+8. **Call termination** - WebSocket closes, call ends
+
+### Multi-region deployment
+
+For global deployments:
+
+1. **Regional phone numbers** - Purchase numbers in target markets
+2. **Geographic routing** - Route calls to nearest Iqra AI instance
+3. **Latency optimization** - Minimize RTP latency via edge deployment
+4. **Failover** - Automatic fallback to alternate regions
+
+See the [multi-region guide](/advanced/multi-region) for details.
+
+## WebRTC deployment
+
+For browser and mobile integration, Iqra AI provides WebRTC gateway:
+
+### Features
+
+- **Browser calls** - Direct from web apps (no phone number needed)
+- **Mobile SDK** - iOS/Android integration
+- **Sub-second latency** - Direct peer connection
+- **No telephony costs** - Internet-only audio
+
+### Configuration
+
+```json
+{
+  "transport": "webrtc",
+  "stunServers": [
+    "stun:stun.l.google.com:19302"
+  ],
+  "turnServers": [
+    {
+      "urls": "turn:turn.example.com:3478",
+      "username": "user",
+      "credential": "pass"
+    }
+  ]
+}
+```
+
+See the [WebRTC guide](/channels/webrtc) for implementation details.
+
+## Compliance and regulations
+
+### Call recording
+
+When recording calls:
+
+- **Two-party consent** - Required in CA, FL, IL, and other states
+- **Disclosure** - Inform callers of recording
+- **Retention** - Store according to regulatory requirements
+- **Encryption** - Protect recordings at rest
+
+### TCPA compliance (US)
+
+For outbound calling:
+
+- **Written consent** - Required for autodialed/prerecorded calls
+- **DNC lists** - Honor Do Not Call registries
+- **Time restrictions** - 8am-9pm local time
+- **Opt-out** - Provide instant removal mechanism
+
+### GDPR (EU)
+
+For European callers:
+
+- **Data minimization** - Only collect necessary information
+- **Right to deletion** - Allow data removal requests
+- **Data portability** - Export caller data on request
+- **Breach notification** - Report incidents within 72 hours
+
+<Warning>
+Telephony compliance varies by jurisdiction. Consult with legal counsel to ensure your deployment meets local requirements.
+</Warning>
+
+## Cost optimization
+
+### Provider comparison
+
+| Provider | Inbound (US) | Outbound (US) | International | Notes |
+|----------|--------------|---------------|---------------|-------|
+| Twilio | $0.0085/min | $0.013/min | Varies by country | Premium reliability |
+| Telnyx | $0.004/min | $0.006/min | Competitive rates | Best value |
+| Vonage | $0.0060/min | $0.0090/min | Global coverage | Enterprise features |
+| SIP Direct | Provider-dependent | Provider-dependent | Varies widely | Most flexible |
+
+### Best practices
+
+1. **Right-size providers** - Use Telnyx for high volume, Twilio for critical calls
+2. **Regional numbers** - Local numbers reduce costs vs. toll-free
+3. **Minimize call duration** - Optimize agent responses for brevity
+4. **Monitor usage** - Set up alerts for unexpected spikes
+5. **Negotiate contracts** - Enterprise discounts available at scale
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure voice providers" href="/integrations/tts-providers">
+    Set up TTS for call responses
+  </Card>
+  <Card title="Add speech recognition" href="/integrations/stt-providers">
+    Configure STT for caller input
+  </Card>
+  <Card title="Build call flows" href="/building/visual-ide">
+    Design conversation logic
+  </Card>
+  <Card title="Deploy globally" href="/advanced/multi-region">
+    Set up multi-region infrastructure
+  </Card>
+</CardGroup>

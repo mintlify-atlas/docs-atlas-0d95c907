@@ -1,0 +1,293 @@
+---
+title: Agents
+description: Manage AI agents and their configurations
+---
+
+## Overview
+
+Agents are AI-powered conversational assistants that handle customer interactions. Each agent has its own personality, context, knowledge base, and integrations.
+
+Agent information is included in the [Business](/api/businesses) endpoint response. This page documents the agent structure and configuration options.
+
+## Agent structure
+
+Agents are returned as part of the business application configuration:
+
+<ResponseField name="Agents" type="array">
+  Array of agent configurations
+  
+  <Expandable title="Agent properties">
+    <ResponseField name="Id" type="string">
+      Unique agent identifier
+    </ResponseField>
+    
+    <ResponseField name="General" type="object">
+      General configuration
+      
+      <Expandable title="General properties">
+        <ResponseField name="Name" type="string">
+          Agent name
+        </ResponseField>
+        
+        <ResponseField name="Description" type="string">
+          Agent description
+        </ResponseField>
+        
+        <ResponseField name="Enabled" type="boolean">
+          Whether the agent is active
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Context" type="object">
+      Agent-specific context and variables that guide the conversation
+    </ResponseField>
+    
+    <ResponseField name="Personality" type="object">
+      Defines the agent's communication style and tone
+      
+      <Expandable title="Personality properties">
+        <ResponseField name="Tone" type="string">
+          Communication tone (e.g., professional, friendly, casual)
+        </ResponseField>
+        
+        <ResponseField name="Style" type="string">
+          Conversation style guidelines
+        </ResponseField>
+        
+        <ResponseField name="Constraints" type="array">
+          Behavioral constraints and rules
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Utterances" type="object">
+      Predefined responses for common scenarios
+      
+      <Expandable title="Utterances properties">
+        <ResponseField name="Greeting" type="string">
+          Initial greeting message
+        </ResponseField>
+        
+        <ResponseField name="Fallback" type="string">
+          Response when agent doesn't understand
+        </ResponseField>
+        
+        <ResponseField name="Goodbye" type="string">
+          Closing message
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Interruptions" type="object">
+      Configuration for handling user interruptions
+      
+      <Expandable title="Interruption properties">
+        <ResponseField name="Enabled" type="boolean">
+          Whether interruptions are allowed
+        </ResponseField>
+        
+        <ResponseField name="TurnEndViaAI" type="object">
+          AI-based turn detection settings
+        </ResponseField>
+        
+        <ResponseField name="Verification" type="object">
+          Interruption verification settings
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="KnowledgeBase" type="object">
+      Knowledge base integration settings
+      
+      <Expandable title="Knowledge base properties">
+        <ResponseField name="Enabled" type="boolean">
+          Whether knowledge base is enabled
+        </ResponseField>
+        
+        <ResponseField name="References" type="array">
+          Knowledge base reference IDs
+        </ResponseField>
+        
+        <ResponseField name="QueryRefinement" type="object">
+          Query refinement settings
+        </ResponseField>
+        
+        <ResponseField name="SearchStrategy" type="object">
+          Search strategy configuration
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Integrations" type="object">
+      AI model integrations for this agent
+      
+      <Expandable title="Integration properties">
+        <ResponseField name="STT" type="object">
+          Speech-to-Text integration by language
+        </ResponseField>
+        
+        <ResponseField name="LLM" type="object">
+          Language Model integration by language
+        </ResponseField>
+        
+        <ResponseField name="TTS" type="object">
+          Text-to-Speech integration by language
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="Cache" type="object">
+      Caching configuration for improved performance
+    </ResponseField>
+    
+    <ResponseField name="Settings" type="object">
+      Advanced agent settings
+      
+      <Expandable title="Settings properties">
+        <ResponseField name="BackgroundAudioUrl" type="string">
+          Pre-signed URL for background audio (if configured)
+        </ResponseField>
+        
+        <ResponseField name="MaxDuration" type="integer">
+          Maximum conversation duration in seconds
+        </ResponseField>
+        
+        <ResponseField name="Language" type="string">
+          Default language for this agent
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Accessing agent data
+
+Agent data is retrieved through the [Get Business](/api/businesses) endpoint:
+
+<CodeGroup>
+```bash cURL
+curl https://api.iqra.ai/api/v1/business/12345 \
+  -H "Authorization: Token YOUR_API_KEY"
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.iqra.ai/api/v1/business/12345', {
+  headers: {
+    'Authorization': 'Token YOUR_API_KEY'
+  }
+});
+
+const data = await response.json();
+const agents = data.Data.BusinessApp.Agents;
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.iqra.ai/api/v1/business/12345',
+    headers={'Authorization': 'Token YOUR_API_KEY'}
+)
+
+data = response.json()
+agents = data['Data']['BusinessApp']['Agents']
+```
+</CodeGroup>
+
+## Example agent response
+
+```json
+{
+  "Id": "agent_abc123",
+  "General": {
+    "Name": "Sales Agent",
+    "Description": "Handles customer sales inquiries",
+    "Enabled": true
+  },
+  "Context": {
+    "Variables": {
+      "CompanyName": "Acme Corp",
+      "ProductLine": "Enterprise Software"
+    }
+  },
+  "Personality": {
+    "Tone": "professional and friendly",
+    "Style": "consultative sales approach",
+    "Constraints": [
+      "Never discuss pricing without qualification",
+      "Always offer to schedule a demo"
+    ]
+  },
+  "Utterances": {
+    "Greeting": "Hello! Thanks for calling Acme Corp. How can I help you today?",
+    "Fallback": "I'm not sure I understood that. Could you rephrase?",
+    "Goodbye": "Thank you for your time. Have a great day!"
+  },
+  "Interruptions": {
+    "Enabled": true,
+    "TurnEndViaAI": {
+      "Enabled": true
+    }
+  },
+  "KnowledgeBase": {
+    "Enabled": true,
+    "References": ["kb_xyz789"]
+  },
+  "Integrations": {
+    "STT": {
+      "en": ["deepgram_integration_id"]
+    },
+    "LLM": {
+      "en": ["openai_integration_id"]
+    },
+    "TTS": {
+      "en": ["elevenlabs_integration_id"]
+    }
+  },
+  "Settings": {
+    "BackgroundAudioUrl": "https://s3.amazonaws.com/audio.mp3",
+    "MaxDuration": 1800,
+    "Language": "en"
+  }
+}
+```
+
+## Agent configuration best practices
+
+### Context and personality
+
+- Keep context variables specific and relevant to the agent's purpose
+- Define clear personality traits that align with your brand
+- Set appropriate constraints to keep conversations on track
+
+### Utterances
+
+- Write natural, conversational greetings and responses
+- Test utterances with different customer types
+- Localize utterances for multi-language support
+
+### Interruptions
+
+- Enable interruptions for natural conversation flow
+- Use AI-based turn detection for better accuracy
+- Configure verification to reduce false positives
+
+### Knowledge base
+
+- Link relevant knowledge bases to provide accurate information
+- Use query refinement to improve search accuracy
+- Monitor knowledge base usage and update content regularly
+
+### Integrations
+
+- Configure STT, LLM, and TTS per language for best results
+- Test different AI models to find the best fit for your use case
+- Monitor integration performance and costs
+
+## Notes
+
+- Background audio URLs are pre-signed and expire after approximately 8 hours
+- Agents can be enabled/disabled without deleting configuration
+- Multi-language agents require separate STT/LLM/TTS integrations per language
+- Agent settings are inherited from business-level defaults unless overridden

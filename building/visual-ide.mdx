@@ -1,0 +1,195 @@
+---
+title: Visual IDE
+description: Build conversational agents using the graph-based script editor
+---
+
+The Visual IDE is a no-code graph-based editor that provides deep control over your AI agents without sacrificing technical depth. Build sophisticated conversation flows through a unified visual interface that eliminates context switching between configuration panels.
+
+<img src="/.github/images/features/visual-ide.png" alt="Visual IDE" />
+
+## Overview
+
+While accessible to non-engineers, the Visual IDE exposes granular control over:
+
+- System prompts and AI behavior
+- Variable states and data flow
+- Tool definitions and integrations
+- Conditional logic and workflows
+- Multi-language conversation paths
+
+## Core components
+
+### Scripts
+
+Scripts are the fundamental building blocks of your agent's behavior. Each script contains:
+
+- **Nodes** - Individual conversation steps or actions
+- **Edges** - Connections defining the flow between nodes
+- **Variables** - Data storage accessible throughout the script
+- **General settings** - Metadata like name and description
+
+Scripts can be composed together using the **Add Script to Context** system tool, allowing you to create modular, reusable conversation components.
+
+### Nodes
+
+Nodes represent discrete steps in your conversation flow. Each node has:
+
+- A unique ID for reference
+- A position on the canvas (X, Y coordinates)
+- Type-specific configuration
+- Input and output ports for connections
+
+See [Script nodes](/building/script-nodes) for detailed information about available node types.
+
+### Edges
+
+Edges connect nodes together to define conversation flow. Each edge specifies:
+
+- Source node and port
+- Target node and port
+
+The edge system allows for complex branching logic, including:
+
+- Conditional routing based on user responses
+- Multiple outcomes from DTMF input
+- Dynamic navigation with GoToNode
+
+### Variables
+
+Variables store data throughout the conversation lifecycle. Each variable includes:
+
+<ResponseField name="Key" type="string" required>
+  Alphanumeric identifier with underscores (e.g., `customer_pin`)
+  
+  Used in Scriban templates as `{{ variables.customer_pin }}`
+</ResponseField>
+
+<ResponseField name="Type" type="enum" required>
+  Data type: `String`, `Number`, or `Boolean`
+</ResponseField>
+
+<ResponseField name="DefaultValue" type="string">
+  Initial value, converted at runtime based on Type
+</ResponseField>
+
+<ResponseField name="IsVisibleToAgent" type="boolean" default="true">
+  If `true`, the variable is injected into the LLM system prompt
+  
+  If `false`, hidden from the AI (useful for sensitive data like PINs)
+</ResponseField>
+
+<ResponseField name="IsEditableByAI" type="boolean" default="false">
+  If `true`, the AI can modify this variable via extraction or tool output
+  
+  If `false`, the variable is read-only
+</ResponseField>
+
+<ResponseField name="Description" type="object">
+  Multi-language descriptions explaining the variable's purpose
+</ResponseField>
+
+<Tip>
+Use `IsVisibleToAgent: false` combined with `IsEditableByAI: false` for secure data collection scenarios where the AI should never see raw values.
+</Tip>
+
+## Building your first script
+
+<Steps>
+  <Step title="Create a new script">
+    Navigate to your agent and create a new script. Every script automatically includes a **Start Node**.
+  </Step>
+  
+  <Step title="Add conversation nodes">
+    Drag nodes from the palette onto the canvas:
+    
+    - **AI Response** - What the agent should say
+    - **User Query** - What you expect the user to ask
+    - **System Tools** - Actions like End Call, DTMF Input, Send SMS
+  </Step>
+  
+  <Step title="Connect the flow">
+    Draw edges between nodes to define the conversation path. The flow always starts from the Start Node.
+  </Step>
+  
+  <Step title="Configure node details">
+    Click each node to configure its behavior, including multi-language content and examples.
+  </Step>
+  
+  <Step title="Test your script">
+    Save the script and assign it to an agent, then test via phone call or WebRTC.
+  </Step>
+</Steps>
+
+## Multi-language support
+
+The Visual IDE natively supports parallel language contexts. Most content fields (like Response, Query, Examples) are multi-language dictionaries:
+
+```json
+{
+  "en": "Welcome to our service. How can I help you today?",
+  "ar": "مرحباً بك في خدمتنا. كيف يمكنني مساعدتك اليوم؟",
+  "es": "Bienvenido a nuestro servicio. ¿Cómo puedo ayudarte hoy?"
+}
+```
+
+The agent automatically switches between languages mid-conversation, loading completely different neural configurations, TTS voices, and STT models.
+
+## Design patterns
+
+### Modular scripts
+
+Break complex agents into smaller scripts:
+
+- **Main script** - Greeting and routing logic
+- **FAQ script** - Common questions handler
+- **Payment script** - Secure transaction flow
+
+Use the **Add Script to Context** tool to inject scripts dynamically based on user needs.
+
+### Error handling
+
+Always provide fallback paths:
+
+- Add timeout handling on DTMF Input nodes
+- Create "I didn't understand" responses
+- Include escape routes to human transfer
+
+### Variable management
+
+Organize variables by visibility:
+
+- **Public variables** - Visible to AI for context
+- **Private variables** - Hidden from AI, set by deterministic tools
+- **Constants** - Read-only data like business hours
+
+<Warning>
+Never store sensitive data (passwords, full credit card numbers) in variables marked as `IsVisibleToAgent: true`. Use secure sessions instead.
+</Warning>
+
+## Best practices
+
+1. **Use descriptive node IDs** - Makes debugging easier
+2. **Provide examples** - Help the AI understand expected patterns
+3. **Test edge cases** - Verify all paths work as expected
+4. **Keep scripts focused** - One script per major conversation goal
+5. **Document variables** - Add descriptions for team collaboration
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Agent configuration" href="/building/agent-configuration" icon="sliders">
+    Configure personality, integrations, and settings
+  </Card>
+  
+  <Card title="Script nodes" href="/building/script-nodes" icon="diagram-project">
+    Learn about all available node types
+  </Card>
+  
+  <Card title="Action flows" href="/building/action-flows" icon="code-branch">
+    Build deterministic workflows
+  </Card>
+  
+  <Card title="Secure sessions" href="/building/secure-sessions" icon="lock">
+    Collect sensitive data securely
+  </Card>
+</CardGroup>

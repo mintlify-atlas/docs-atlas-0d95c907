@@ -1,0 +1,497 @@
+---
+title: Native multi-language support
+description: Parallel context architecture for authentic cultural communication across languages
+---
+
+Iqra AI's multi-language support is fundamentally different from translation-based approaches. Instead of translating content, the platform runs **parallel logic stacks**—each language gets its own complete configuration, personality, and even different AI service providers optimized for cultural authenticity.
+
+## The translation problem
+
+Traditional multi-language AI systems translate content:
+
+```
+User speaks Arabic → Translate to English → AI processes in English → 
+Translate response to Arabic → Speak to user
+```
+
+**Problems with this approach:**
+
+1. **Double latency**: Each translation adds 200-500ms delay
+2. **Lost nuance**: "Please" doesn't translate culturally the same across languages
+3. **Wrong tone**: A "professional" tone in English feels cold in Arabic
+4. **Cultural mismatches**: Greetings, formality, humor don't translate
+5. **Voice limitations**: AI trained on English sounds unnatural in other languages
+
+<Warning>
+Translation-based systems often produce technically correct but culturally awkward conversations. Users can tell they're talking to a "translated" AI.
+</Warning>
+
+## Parallel context architecture
+
+Iqra AI runs separate logic for each language:
+
+```
+User speaks Arabic → Arabic AI context (native prompts, examples, persona) → 
+Arabic TTS (culturally appropriate voice) → Speak to user
+
+User switches to English → English AI context (different prompts, examples, persona) → 
+English TTS (different voice) → Speak to user
+```
+
+**Each language has its own:**
+
+- System prompts (not translated, natively written)
+- Response examples (culturally appropriate)
+- Personality traits (e.g., "hospitable" in Arabic vs. "professional" in English)
+- AI service providers (e.g., Azure for Arabic, OpenAI for English)
+- Voice settings (different voices, speeds, tones)
+- Script instructions (same logic, different phrasing)
+
+This enables authentic, culturally-aware conversations in every supported language.
+
+<Info>
+When you switch languages mid-conversation, Iqra AI loads a completely different neural configuration, not just different words.
+</Info>
+
+## Multi-language storage
+
+All user-facing content uses the `[MultiLanguageProperty]` attribute:
+
+```csharp
+[MultiLanguageProperty]
+public Dictionary<string, string> Name { get; set; }
+
+[MultiLanguageProperty]
+public Dictionary<string, List<string>> Capabilities { get; set; }
+```
+
+### Agent personality example
+
+```csharp
+public class BusinessAppAgentPersonality
+{
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Name { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Role { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Tone { get; set; }
+}
+```
+
+**Configuration for same agent in different languages:**
+
+```yaml
+Name:
+  English: "Alex"
+  Arabic: "أحمد"  # Different name for cultural fit
+  Spanish: "Alejandro"
+
+Role:
+  English: "Professional customer service representative"
+  Arabic: "ممثل خدمة العملاء المحترف والمضياف"
+  Spanish: "Representante profesional de servicio al cliente"
+
+Tone:
+  English:
+    - Professional
+    - Efficient
+    - Friendly
+  Arabic:
+    - محترف (Professional)
+    - مضياف (Hospitable)
+    - صبور (Patient)
+    - محترم (Respectful)
+  Spanish:
+    - Profesional
+    - Cordial
+    - Servicial
+```
+
+Notice the Arabic version adds "Hospitable" and "Patient"—culturally important traits in Arabic customer service that feel out of place in English.
+
+## Script multi-language configuration
+
+### AI response nodes
+
+Each response is written natively per language:
+
+```csharp
+public class BusinessAppScriptAIResponseNode
+{
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Response { get; set; }
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, List<string>> Examples { get; set; }
+}
+```
+
+**Example: Greeting node**
+
+```yaml
+Response:
+  English: "Welcome! How can I help you today?"
+  Arabic: "أهلاً وسهلاً! كيف يمكنني مساعدتك اليوم؟"
+  Spanish: "¡Bienvenido! ¿Cómo puedo ayudarte hoy?"
+
+Examples:
+  English:
+    - "Hi there! What can I do for you?"
+    - "Hello! How may I assist you today?"
+    - "Welcome! What brings you here today?"
+    
+  Arabic:
+    - "مرحباً بك! تفضل، كيف أقدر أساعدك؟"
+    - "حياك الله! وش تحتاج اليوم؟"
+    - "أهلاً! شو ممكن أساعدك فيه؟"
+    
+  Spanish:
+    - "¡Hola! ¿En qué puedo ayudarte?"
+    - "¡Buenos días! ¿Qué necesitas hoy?"
+    - "¡Bienvenido! ¿En qué te puedo servir?"
+```
+
+The AI learns the cultural style from the examples. Arabic examples show more warmth, English examples are more direct.
+
+### User query nodes
+
+Instructions are written in each language:
+
+```yaml
+Query:
+  English: "Ask the user which service they're interested in"
+  Arabic: "اسأل المستخدم عن الخدمة التي يهتم بها"
+  Spanish: "Pregunta al usuario qué servicio le interesa"
+
+Examples:
+  English:
+    - "Which service would you like to book?"
+    - "What service are you interested in?"
+    
+  Arabic:
+    - "أي خدمة تحب تحجز؟"
+    - "وش الخدمة اللي تبغاها؟"
+    
+  Spanish:
+    - "¿Qué servicio te gustaría reservar?"
+    - "¿Cuál servicio te interesa?"
+```
+
+### System tool nodes
+
+Even system messages are localized:
+
+```yaml
+End Call Node:
+  Messages:
+    English: "Thank you for calling! Have a great day!"
+    Arabic: "شكراً لاتصالك! نتمنى لك يوماً سعيداً!"
+    Spanish: "¡Gracias por llamar! ¡Que tengas un gran día!"
+```
+
+## Variable descriptions
+
+Variables have multi-language descriptions for AI context:
+
+```csharp
+public class BusinessAppScriptVariable
+{
+    public string Key { get; set; }  // e.g., "user_email"
+    
+    [MultiLanguageProperty]
+    public Dictionary<string, string> Description { get; set; }
+}
+```
+
+**Example:**
+
+```yaml
+Key: "appointment_date"
+Type: String
+
+Description:
+  English: "The date the user wants to schedule their appointment"
+  Arabic: "التاريخ الذي يرغب المستخدم في حجز موعده فيه"
+  Spanish: "La fecha en que el usuario desea programar su cita"
+```
+
+This description is injected into the AI's system prompt in the active language, helping it understand what the variable represents.
+
+## Language detection and switching
+
+### Automatic language detection
+
+Iqra AI can automatically detect the user's language:
+
+1. User speaks/types in their language
+2. STT (Speech-to-Text) or NLU detects language
+3. System loads the corresponding language context
+4. Conversation continues in detected language
+
+### Mid-conversation switching
+
+Users can switch languages mid-conversation:
+
+```
+[Call starts]
+Agent (English): "Hello! How can I help you?"
+User (English): "I need to book an appointment"
+
+[User switches to Arabic]
+User (Arabic): "في أي أوقات متاحة؟" (What times are available?)
+
+[System detects language change]
+Agent (Arabic): "دعني أتحقق من المواعيد المتاحة..." (Let me check available times...)
+
+[Conversation continues in Arabic]
+```
+
+The agent seamlessly switches personality, voice, and prompts.
+
+<Tip>
+Enable automatic language detection for customer-facing agents in multilingual regions. Users appreciate being able to use their preferred language without being forced to choose upfront.
+</Tip>
+
+## Provider optimization per language
+
+Different AI providers perform better in different languages:
+
+```yaml
+Agent Integrations:
+  
+  English:
+    LLMProvider: "OpenAI"
+    Model: "gpt-4"
+    TTSProvider: "Deepgram"
+    Voice: "nova"
+    STTProvider: "Deepgram"
+    
+  Arabic:
+    LLMProvider: "Azure OpenAI"  # Better Arabic support
+    Model: "gpt-4"
+    TTSProvider: "Azure Speech"   # Native Arabic voices
+    Voice: "ar-SA-ZariyahNeural"  # Saudi dialect
+    STTProvider: "Azure Speech"   # Better Arabic transcription
+    
+  Spanish:
+    LLMProvider: "Anthropic"
+    Model: "claude-3-opus"
+    TTSProvider: "ElevenLabs"
+    Voice: "spanish_male_professional"
+    STTProvider: "Deepgram"
+```
+
+Each language uses the optimal provider stack for that language's characteristics.
+
+## Cultural adaptation examples
+
+### Formality levels
+
+**English (casual professional):**
+```yaml
+Greeting: "Hey there! What can I help you with?"
+Closing: "Great! You're all set. Have a good one!"
+```
+
+**Arabic (formal, hospitable):**
+```yaml
+Greeting: "أهلاً وسهلاً بك، يسعدني خدمتك اليوم" (Welcome, I'm pleased to serve you today)
+Closing: "تم الحجز بنجاح. نتشرف بخدمتك دائماً" (Booking successful. We're honored to serve you always)
+```
+
+### Handling sensitive topics
+
+**English (direct):**
+```yaml
+Payment Request: "I'll need your credit card number to complete the booking"
+```
+
+**Arabic (more trust-building):**
+```yaml
+Payment Request: "لإتمام الحجز بشكل آمن، نحتاج معلومات الدفع. جميع بياناتك محمية ومشفرة"
+(To complete the booking securely, we need payment information. All your data is protected and encrypted)
+```
+
+The Arabic version adds reassurance about security—culturally important for trust.
+
+### Time and scheduling
+
+**English:**
+```yaml
+"What time works for you?"
+"Morning, afternoon, or evening?"
+```
+
+**Arabic (considers prayer times):**
+```yaml
+"ما الوقت المناسب لك؟ صباحاً، بعد الظهر، أو مساءً؟"
+"نحرص على عدم الحجز خلال أوقات الصلاة. هل تفضل وقت معين؟"
+(We ensure not to book during prayer times. Do you prefer a specific time?)
+```
+
+## Implementation workflow
+
+When building multi-language agents:
+
+### 1. Define supported languages
+
+```yaml
+Business App Settings:
+  SupportedLanguages:
+    - "en" (English)
+    - "ar" (Arabic)
+    - "es" (Spanish)
+```
+
+### 2. Configure personality per language
+
+Don't just translate—adapt:
+
+```yaml
+Agent Personality:
+  English:
+    Name: "Sarah"
+    Role: "Customer service representative"
+    Tone: ["Professional", "Friendly", "Efficient"]
+    
+  Arabic:
+    Name: "سارة"
+    Role: "ممثلة خدمة العملاء"
+    Tone: ["محترفة", "مضيافة", "صبورة", "محترمة"]
+```
+
+### 3. Write scripts in each language
+
+Natively write all nodes:
+- AI responses
+- User queries
+- System tool messages
+- Variable descriptions
+
+### 4. Select providers per language
+
+Choose optimal AI/TTS/STT for each:
+
+```yaml
+English: OpenAI + Deepgram
+Arabic: Azure (better Arabic)
+Spanish: Anthropic + ElevenLabs
+```
+
+### 5. Test with native speakers
+
+Don't rely on your own translation:
+- Have native speakers test conversations
+- Check for cultural appropriateness
+- Verify tone matches expectations
+- Ensure idioms make sense
+
+<Warning>
+Never use machine translation for multi-language content. Always have native speakers write and review content for each language.
+</Warning>
+
+## Data consistency across languages
+
+Some data is language-independent:
+
+```yaml
+# Language-specific (uses MultiLanguageProperty)
+Agent Name:
+  English: "Alex"
+  Arabic: "أحمد"
+
+# Language-independent (single value)
+Agent Settings:
+  MaxRetryAttempts: 3
+  SessionTimeout: 300
+  
+Variables:
+  user_email: "test@example.com"  # Same in all languages
+  retry_count: 2                  # Same in all languages
+```
+
+Variables store actual data (email, numbers, IDs) which doesn't change by language. Only the **description** is multi-language.
+
+## Best practices
+
+### Don't assume cultural equivalence
+
+```yaml
+# Bad: Direct translation
+English: "How can I help you?"
+Arabic: "كيف يمكنني مساعدتك؟" (Technically correct but cold)
+
+# Good: Cultural adaptation
+English: "How can I help you?"
+Arabic: "أهلاً وسهلاً! تفضل، كيف أقدر أخدمك؟" (Warm, hospitable)
+```
+
+### Localize examples, not just instructions
+
+Provide culturally appropriate examples:
+
+```yaml
+English Examples:
+  - "Sure, I can help with that"
+  - "No problem, let me look that up"
+  
+Arabic Examples:
+  - "حياك الله، أكيد أقدر أساعدك"
+  - "تفضل، خلني أشوف لك"
+```
+
+These teach the AI the cultural speaking style.
+
+### Test edge cases
+
+What happens when:
+- User switches languages mid-sentence?
+- User uses mixed language (common in bilingual regions)?
+- Language detection fails?
+
+Have fallback strategies.
+
+### Use regional variants carefully
+
+Arabic in Saudi Arabia ≠ Arabic in Egypt:
+
+```yaml
+Arabic (Saudi):
+  Voice: "ar-SA-ZariyahNeural"
+  Tone: ["Formal", "Respectful"]
+  
+Arabic (Egyptian):
+  Voice: "ar-EG-SalmaNeural"
+  Tone: ["Friendly", "Casual"]
+```
+
+Consider offering regional options.
+
+### Monitor per-language performance
+
+Track separately:
+- Conversation success rate per language
+- User satisfaction per language
+- Common failure points per language
+
+You might find English works great but Arabic needs tuning.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build multi-language agents" icon="language" href="/build/multi-language">
+    Step-by-step guide to creating culturally-aware agents
+  </Card>
+  <Card title="Agent configuration" icon="robot" href="/build/agent">
+    Configure personality and integrations per language
+  </Card>
+  <Card title="Voice settings" icon="microphone" href="/build/agent/voice">
+    Choose optimal TTS/STT providers per language
+  </Card>
+  <Card title="Architecture overview" icon="sitemap" href="/concepts/architecture">
+    Understand how parallel contexts work under the hood
+  </Card>
+</CardGroup>

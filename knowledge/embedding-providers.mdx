@@ -1,0 +1,352 @@
+---
+title: "Embedding provider integrations"
+description: "Configure and manage embedding providers for knowledge base vectorization"
+---
+
+## Overview
+
+Embedding providers convert text into dense vector representations that enable semantic search. Iqra AI's modular architecture supports multiple embedding providers through a unified interface.
+
+<Note>
+Embedding quality directly impacts retrieval accuracy. Choose providers based on your language requirements, domain specificity, and performance needs.
+</Note>
+
+## Supported providers
+
+### Google Gemini
+
+Currently, Iqra AI supports Google's Gemini embedding models:
+
+- **text-embedding-004**: Latest model with improved multilingual support
+- Supports variable vector dimensions (128, 256, 512, 768, 1024)
+- Optimized for both retrieval and semantic similarity tasks
+
+<Tip>
+Gemini embeddings provide excellent multilingual support, making them ideal for Arabic and other non-English content in Iqra AI.
+</Tip>
+
+### Coming soon
+
+The architecture supports adding:
+
+- OpenAI embeddings (text-embedding-3-small, text-embedding-3-large)
+- Azure OpenAI embeddings
+- Cohere embeddings
+- Custom embedding endpoints
+
+## Setting up an embedding provider
+
+<Steps>
+  <Step title="Create integration">
+    Navigate to **Integrations** in your business dashboard and create a new embedding integration.
+  </Step>
+  
+  <Step title="Configure provider">
+    Select **Google Gemini** and provide:
+    
+    - **API Key**: Your Google AI API key
+    - **Integration Name**: Descriptive name for this configuration
+    
+    ```bash
+    # Get your API key from Google AI Studio
+    https://aistudio.google.com/app/apikey
+    ```
+  </Step>
+  
+  <Step title="Add models">
+    Configure the embedding models you want to use:
+    
+    ```typescript
+    {
+      id: "text-embedding-004",
+      name: "Text Embedding 004",
+      disabled: false,
+      price: 0.00001,              // Per 1,000 tokens
+      priceTokenUnit: 1000,
+      availableVectorDimensions: [128, 256, 512, 768, 1024]
+    }
+    ```
+  </Step>
+  
+  <Step title="Test connection">
+    Use the test interface to verify:
+    - API key is valid
+    - Model access is working
+    - Embeddings are generated successfully
+  </Step>
+</Steps>
+
+## Embedding configuration
+
+### Vector dimensions
+
+When configuring a knowledge base, select the appropriate vector dimension:
+
+- **128-256**: Faster search, lower storage, may sacrifice quality
+- **512-768**: Balanced performance and quality (recommended)
+- **1024**: Maximum quality, higher computational cost
+
+<Note>
+Higher dimensions capture more semantic nuance but increase storage requirements and query latency. Test to find the optimal balance.
+</Note>
+
+### Model selection
+
+Choose embedding models based on:
+
+1. **Language support**: Ensure the model handles your content languages
+2. **Domain alignment**: Some models are optimized for specific domains
+3. **Dimension requirements**: Match your vector database configuration
+4. **Cost**: Balance quality against operational expenses
+
+## Embedding cache
+
+Iqra AI implements intelligent embedding caching to optimize performance and reduce costs:
+
+### How caching works
+
+<Steps>
+  <Step title="Cache key generation">
+    Each embedding request generates a cache key based on:
+    - Input text
+    - Provider type (e.g., GoogleGemini)
+    - Model configuration (model name, dimensions)
+  </Step>
+  
+  <Step title="Cache lookup">
+    Before calling the embedding API:
+    1. System checks if embedding exists in Redis cache
+    2. If found (cache hit), returns cached embedding
+    3. If not found (cache miss), calls provider API
+  </Step>
+  
+  <Step title="Cache storage">
+    New embeddings are stored in:
+    - **Redis**: For fast retrieval
+    - **MongoDB**: For persistence and analytics
+    
+    Organized by:
+    - Business ID
+    - Embedding group ID
+    - Language
+    - Reference context
+  </Step>
+</Steps>
+
+### Cache benefits
+
+- **Cost reduction**: Avoid redundant API calls for repeated queries
+- **Latency improvement**: Cache hits are 10-100x faster than API calls
+- **Quota management**: Reduce usage against provider rate limits
+
+<Tip>
+Embedding cache is particularly effective for:
+- Common user queries
+- Repeated indexing operations
+- Testing and development workflows
+</Tip>
+
+### Cache configuration
+
+The system automatically manages cache based on:
+
+```typescript
+{
+  // Cache is enabled by default for retrieval queries
+  checkEmbeddingCache: true,
+  
+  // Group embeddings by language and reference
+  cacheEmbeddingGroupLanguage: "en",
+  cacheReference: "agent-123"
+}
+```
+
+## Provider implementation
+
+For developers extending Iqra AI with custom providers:
+
+### Interface requirements
+
+Implement the `IEmbeddingService` interface:
+
+```csharp
+public interface IEmbeddingService : IDisposable
+{
+    // Generate embedding for single text
+    Task<FunctionReturnResult<float[]?>> GenerateEmbeddingForTextAsync(
+        string text
+    );
+    
+    // Generate embeddings for multiple texts (batched)
+    Task<FunctionReturnResult<List<float[]>>> GenerateEmbeddingForTextListAsync(
+        List<string> texts
+    );
+    
+    // Get provider type for caching
+    InterfaceEmbeddingProviderEnum GetProviderType();
+    
+    // Get cacheable configuration
+    IEmbeddingConfig GetCacheableConfig();
+}
+```
+
+### Example: Google Gemini implementation
+
+The Google Gemini service demonstrates the pattern:
+
+```csharp
+public class GoogleGeminiEmbeddingService : IEmbeddingService
+{
+    private readonly HttpClient _httpClient;
+    private readonly string _apiKey;
+    private readonly GoogleGeminiEmbeddingServiceConfig _config;
+    
+    public async Task<FunctionReturnResult<float[]?>> 
+        GenerateEmbeddingForTextAsync(string text)
+    {
+        var request = new GeminiEmbeddingRequest
+        {
+            Model = $"models/{_config.Model}",
+            Content = new { Parts = new[] { new { Text = text } } },
+            OutputDimensionality = _config.VectorDimension
+        };
+        
+        // Make API call, handle errors, return embedding
+    }
+    
+    public InterfaceEmbeddingProviderEnum GetProviderType() 
+        => InterfaceEmbeddingProviderEnum.GoogleGemini;
+}
+```
+
+### Configuration model
+
+Implement `IEmbeddingConfig` for cache keying:
+
+```csharp
+public class GoogleGeminiEmbeddingServiceConfig : IEmbeddingConfig
+{
+    public required string Model { get; set; }
+    public required int VectorDimension { get; set; }
+}
+```
+
+<Note>
+The configuration is serialized to generate cache keys, ensuring embeddings with different parameters are cached separately.
+</Note>
+
+## Cost optimization
+
+### Batch processing
+
+When indexing documents, the system batches embedding requests:
+
+- Reduces API overhead
+- Improves throughput
+- May offer cost savings with some providers
+
+```csharp
+// Batch all chunks from a document
+var textsToEmbed = chunks.Select(c => c.Text).ToList();
+var embeddings = await embeddingService
+    .GenerateEmbeddingForTextListAsync(textsToEmbed);
+```
+
+### Pricing tracking
+
+Configure pricing in the provider model:
+
+```typescript
+{
+  price: 0.00001,           // Cost per priceTokenUnit
+  priceTokenUnit: 1000      // Typically per 1,000 tokens
+}
+```
+
+The system tracks:
+- Total embedding API calls
+- Estimated token usage
+- Calculated costs per knowledge base
+
+<Warning>
+Pricing is for estimation only. Verify actual costs with your provider's billing dashboard.
+</Warning>
+
+### Cache hit optimization
+
+Maximize cache effectiveness:
+
+1. **Normalize queries**: Clean and standardize text before embedding
+2. **Group by context**: Use embedding groups for related queries
+3. **Monitor hit rate**: Track cache performance in analytics
+
+## Troubleshooting
+
+### API key errors
+
+```
+Embedding generation failed: Unauthorized
+```
+
+Solution:
+- Verify API key is correct and active
+- Check provider account has sufficient quota
+- Ensure API access is enabled for embedding models
+
+### Dimension mismatch
+
+```
+Vector dimension mismatch: expected 768, got 1024
+```
+
+Solution:
+- Ensure knowledge base vector dimension matches model output
+- Recreate Milvus collection with correct dimension
+- Re-index all documents
+
+<Warning>
+Changing vector dimensions requires full re-indexing and cannot be done in-place.
+</Warning>
+
+### Rate limiting
+
+```
+Embedding provider rate limit exceeded
+```
+
+Solution:
+- Implement exponential backoff (automatic in system)
+- Upgrade provider quota/tier
+- Reduce batch size in processing configuration
+- Enable and optimize embedding cache
+
+### Cache not working
+
+```
+Cache hit rate: 0%
+```
+
+Solution:
+- Verify Redis connection is healthy
+- Check embedding group configuration
+- Ensure cache keys are being generated correctly
+- Confirm MongoDB cache persistence is working
+
+## Best practices
+
+1. **Test embeddings**: Validate quality with sample queries before full indexing
+2. **Monitor costs**: Track embedding API usage and optimize accordingly
+3. **Use caching**: Enable cache for retrieval to reduce latency and costs
+4. **Batch wisely**: Balance batch size against rate limits and timeout constraints
+5. **Version carefully**: Changing embedding models requires re-indexing all content
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Setup guide" icon="wrench" href="/knowledge/setup">
+    Create your first knowledge base with embeddings
+  </Card>
+  <Card title="Retrieval strategies" icon="magnifying-glass" href="/knowledge/retrieval">
+    Configure retrieval to maximize embedding effectiveness
+  </Card>
+</CardGroup>

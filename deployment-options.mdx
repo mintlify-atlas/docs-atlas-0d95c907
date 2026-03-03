@@ -1,0 +1,303 @@
+---
+title: Deployment options
+description: Choose between Iqra Cloud, self-hosted, or enterprise deployment based on your needs
+---
+
+# Deployment options
+
+Iqra AI offers three deployment options to fit different organizational needs, from startups to large enterprises with strict compliance requirements.
+
+## Comparison overview
+
+| Feature | Iqra Cloud | Self-Hosted | Enterprise |
+|---------|------------|-------------|------------|
+| **Hosting** | Fully managed SaaS | Your infrastructure | Dedicated or on-premise |
+| **Setup time** | Minutes | Hours to days | Weeks (custom) |
+| **Maintenance** | Automatic updates | Manual updates | Managed or self-managed |
+| **Billing system** | ✅ Included | ❌ Not included | ✅ Optional |
+| **Whitelabeling** | ✅ Included | ❌ Not included | ✅ Custom branding |
+| **Multi-region routing** | ✅ Automatic | ⚠️ Manual setup | ✅ Custom topology |
+| **Pricing** | Usage-based | Infrastructure costs | Custom SLA |
+| **Data residency** | US/EU regions | Full control | Custom (GCC, on-prem) |
+| **Support** | Community + Paid | Community only | Dedicated team |
+
+## Iqra Cloud (SaaS)
+
+<Card title="Get started with Iqra Cloud" icon="rocket" href="https://app.iqra.bot">
+  The fully managed, production-ready platform with automatic scaling and global distribution
+</Card>
+
+### What's included
+
+- **Full platform access**: Complete Agent Engine, Visual IDE, and FlowApp system
+- **Multi-tenant billing**: Built-in usage tracking and subscription management
+- **Whitelabeling management**: Rebrand the entire dashboard for your clients
+- **Managed infrastructure**: Automatic scaling, updates, and security patches
+- **Global edge network**: Multi-region deployment with automatic routing
+- **Production monitoring**: Real-time analytics and performance dashboards
+- **AI model integrations**: Pre-configured access to OpenAI, Anthropic, Gemini, Groq, ElevenLabs, Deepgram, Azure Speech
+
+### Best for
+
+- **Startups and agencies** that want to launch quickly without infrastructure overhead
+- **Teams building SaaS products** that need built-in billing and whitelabeling
+- **Organizations** prioritizing time-to-market over infrastructure control
+- **Projects** requiring global distribution without DevOps complexity
+
+### Pricing
+
+Usage-based pricing with transparent costs:
+- Voice minutes consumed
+- LLM API calls
+- Storage and bandwidth
+
+Visit [iqra.bot/pricing](https://www.iqra.bot/pricing) for current rates.
+
+### Getting started
+
+<Steps>
+  <Step title="Sign up">
+    Create a free account at [app.iqra.bot](https://app.iqra.bot)
+  </Step>
+  <Step title="Build your agent">
+    Use the Visual IDE to create your first conversation flow
+  </Step>
+  <Step title="Deploy">
+    Connect to SIP trunking or embed via WebRTC
+  </Step>
+</Steps>
+
+See the [Quick Start](/quickstart) guide for detailed instructions.
+
+---
+
+## Self-hosted (open source)
+
+<Card title="View on GitHub" icon="github" href="https://github.com/abdofallah/IqraAI">
+  Run the core engine on your own infrastructure with full control
+</Card>
+
+### What's included
+
+- **Core Agent Engine**: Full conversation orchestration and real-time audio processing
+- **Visual IDE**: Complete Script Builder and debugging tools
+- **FlowApp system**: Plugin architecture for external integrations
+- **Multi-language support**: Native parallel context stacks
+- **AI model adapters**: Bring Your Own Model (BYOM) architecture
+- **WebRTC/SIP support**: All communication protocols
+- **Source code access**: Full transparency and customization
+
+### What's excluded
+
+- **Billing system**: No usage tracking or subscription management
+- **Whitelabeling**: Cannot rebrand for client resale
+- **Managed infrastructure**: You handle scaling, updates, and monitoring
+- **Pre-configured cloud services**: Manual setup required for AI providers
+
+### Requirements
+
+Your infrastructure must provide:
+
+- **.NET 10 Runtime**: Core application framework
+- **MongoDB**: Data persistence and document storage
+- **Redis**: Caching and session management
+- **Milvus**: Vector database for embeddings and semantic search
+- **RustFS or S3**: Object storage for audio recordings and media files
+
+### Best for
+
+- **Organizations with strict data residency requirements** (healthcare, finance, government)
+- **Teams with existing infrastructure** that want to integrate Iqra AI into their stack
+- **Developers** who need full source code access for customization
+- **Companies** that want to avoid recurring SaaS costs
+- **Research institutions** exploring voice AI orchestration
+
+### License considerations
+
+Iqra AI uses a custom **Source-Available License**:
+
+<Info>
+  **Permitted uses:**
+  - Personal use and experimentation
+  - Internal business use within your organization
+  - Agency use managing clients manually (without automated resale platform)
+</Info>
+
+<Warning>
+  **Prohibited uses:**
+  - Creating a competing public SaaS platform
+  - Reselling as a whitelabeled product without permission
+  - Uses that violate the ethical clause (see [LICENSE](https://github.com/abdofallah/IqraAI/blob/master/LICENSE.md))
+</Warning>
+
+Read the full [LICENSE](https://github.com/abdofallah/IqraAI/blob/master/LICENSE.md) before deploying.
+
+### Pre-release status
+
+<Warning>
+  **v0.1 Pending**: This codebase is currently active but requires manual service configuration. Automated database seeding scripts are pending the official v0.1 release. Production deployment requires manual DB setup.
+</Warning>
+
+### Getting started
+
+<Steps>
+  <Step title="Review prerequisites">
+    Ensure you have .NET 10, MongoDB, Redis, Milvus, and S3-compatible storage ready
+  </Step>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/abdofallah/IqraAI.git
+    ```
+  </Step>
+  <Step title="Configure services">
+    Set up connection strings and environment variables in `appsettings.json`
+  </Step>
+  <Step title="Deploy">
+    Follow the [Self-Hosting Guide](/deployment/self-hosting) for complete instructions
+  </Step>
+</Steps>
+
+---
+
+## Enterprise
+
+<Card title="Contact sales" icon="building" href="https://www.iqra.bot/contact">
+  Custom deployments for large-scale organizations with specific requirements
+</Card>
+
+### What's included
+
+Everything in Iqra Cloud, plus:
+
+- **Dedicated infrastructure**: Isolated compute, storage, and network resources
+- **Custom SLAs**: Guaranteed uptime, response times, and performance metrics
+- **On-premise installation**: Deploy within your own data centers
+- **Custom data residency**: Specific GCC nations, private cloud, or air-gapped environments
+- **Advanced compliance**: HIPAA, PCI-DSS, SOC 2, custom audit requirements
+- **White-glove onboarding**: Dedicated implementation team
+- **Custom integrations**: Priority development for specific FlowApps or AI models
+- **Dedicated support**: Direct access to engineering team with SLA-backed response times
+- **Training and workshops**: On-site or virtual sessions for your team
+
+### Best for
+
+- **Large enterprises** with complex compliance requirements
+- **Financial institutions** requiring PCI-DSS Level 1 compliance
+- **Healthcare organizations** with HIPAA and patient privacy mandates
+- **Government agencies** with data sovereignty requirements
+- **Telcos and carriers** integrating voice AI into existing infrastructure
+- **Organizations** needing guaranteed uptime and performance SLAs
+
+### Deployment models
+
+<CardGroup cols={2}>
+  <Card title="Dedicated cloud" icon="cloud">
+    Isolated VPC within Iqra's cloud infrastructure with dedicated compute and storage
+  </Card>
+  <Card title="Customer cloud" icon="server">
+    Deployed in your AWS, Azure, or GCP account with Iqra management
+  </Card>
+  <Card title="On-premise" icon="building">
+    Complete installation within your data centers with local support
+  </Card>
+  <Card title="Hybrid" icon="diagram-project">
+    Mix of cloud and on-premise components based on data sensitivity
+  </Card>
+</CardGroup>
+
+### Custom features
+
+Enterprise customers can request:
+
+- **Custom AI model fine-tuning**: Train models on your specific use cases
+- **Advanced security**: SSO, MFA, role-based access control, audit logging
+- **Custom regions**: Deploy in specific geographic locations
+- **Private FlowApps**: Proprietary integrations not available in public catalog
+- **Custom billing logic**: Usage tracking aligned with your business model
+- **Regulatory compliance**: Assistance with industry-specific certifications
+
+### Pricing
+
+Enterprise pricing is custom based on:
+
+- Deployment model and infrastructure requirements
+- Expected traffic volume and concurrent sessions
+- Support SLA and response time guarantees
+- Custom development and integration needs
+- Training and onboarding requirements
+
+### Getting started
+
+<Steps>
+  <Step title="Schedule a consultation">
+    [Contact sales](https://www.iqra.bot/contact) to discuss your requirements
+  </Step>
+  <Step title="Requirements gathering">
+    Our team will work with you to understand compliance, scale, and integration needs
+  </Step>
+  <Step title="Custom proposal">
+    Receive a detailed proposal with architecture, timeline, and pricing
+  </Step>
+  <Step title="Implementation">
+    Dedicated team handles deployment, integration, and testing
+  </Step>
+  <Step title="Go live">
+    Launch with full support and ongoing maintenance
+  </Step>
+</Steps>
+
+---
+
+## Decision guide
+
+### Choose Iqra Cloud if:
+
+- You want to launch quickly without infrastructure setup
+- You need built-in billing and whitelabeling for client resale
+- You prefer automatic updates and managed scaling
+- Your data residency requirements are met by US/EU regions
+
+### Choose self-hosted if:
+
+- You have strict data residency requirements beyond US/EU
+- You have existing infrastructure and DevOps capabilities
+- You need full source code access for customization
+- You want to avoid recurring SaaS costs
+- You're comfortable with manual updates and maintenance
+
+### Choose enterprise if:
+
+- You require guaranteed SLAs and dedicated support
+- You need on-premise or specific regional deployment
+- You have complex compliance requirements (HIPAA, PCI-DSS, SOC 2)
+- You need custom integrations or AI model fine-tuning
+- You want white-glove onboarding and training
+
+## Migration paths
+
+You can migrate between deployment options:
+
+- **Cloud → Self-Hosted**: Export your agents and scripts, deploy on your infrastructure
+- **Self-Hosted → Cloud**: Import your configurations and agents to Iqra Cloud
+- **Cloud/Self-Hosted → Enterprise**: Seamless migration with dedicated support team
+
+<Note>
+  Need help choosing? [Contact our team](https://www.iqra.bot/contact) for a personalized consultation.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Deploy your first agent with step-by-step guidance
+  </Card>
+  <Card title="Self-hosting guide" icon="server" href="/deployment/self-hosting">
+    Complete instructions for infrastructure deployment
+  </Card>
+  <Card title="System architecture" icon="diagram-project" href="/concepts/architecture">
+    Understand the component structure and dependencies
+  </Card>
+  <Card title="Security overview" icon="shield" href="/security">
+    Learn about compliance features and security best practices
+  </Card>
+</CardGroup>

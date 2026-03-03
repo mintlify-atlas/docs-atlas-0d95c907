@@ -1,0 +1,626 @@
+---
+title: Schema definition
+description: Define JSON schemas for FlowApp action inputs
+---
+
+JSON Schema files define the structure, validation, and UI rendering of FlowApp action inputs. They are compiled into your code at build time.
+
+## Schema basics
+
+Every action requires a JSON Schema file with the same base name:
+
+```
+Actions/
+├── BookMeetingAction.cs
+└── BookMeeting.json        ← Must match action name
+```
+
+### Minimal schema
+
+```json
+{
+  "type": "object",
+  "title": "My Action",
+  "required": ["fieldName"],
+  "properties": {
+    "fieldName": {
+      "type": "string",
+      "title": "Field Label",
+      "description": "Help text shown below the field"
+    }
+  }
+}
+```
+
+## Build-time schema generation
+
+The `FlowAppSchemaGenerator` source generator automatically creates the `GetInputSchemaJson()` method:
+
+<Steps>
+
+<Step title="Naming convention">
+The generator looks for a JSON file matching the action class name:
+
+```csharp IqraGenerators/FlowAppSchemaGenerator.cs:68-72
+var className = classSymbol.Name;
+var baseName = className.EndsWith("Action")
+    ? className.Substring(0, className.Length - 6)
+    : className;
+// BookMeetingAction → BookMeeting.json
+```
+</Step>
+
+<Step title="Same directory requirement">
+The JSON file must be in the same directory as the C# file:
+
+```csharp IqraGenerators/FlowAppSchemaGenerator.cs:83-84
+var jsonDir = Path.GetDirectoryName(f.Path);
+return jsonDir == sourceDirectory && jsonName == baseName;
+```
+</Step>
+
+<Step title="Code generation">
+The generator creates a partial class method:
+
+```csharp IqraGenerators/FlowAppSchemaGenerator.cs:102-117
+public partial class BookMeetingAction
+{
+    public string GetInputSchemaJson()
+    {
+        return Regex.Unescape("""{\"type\":\"object\",\"title\":\"Book a Meeting\",...}""");
+    }
+}
+```
+</Step>
+
+</Steps>
+
+<Warning>
+If the JSON file is not found or is invalid, compilation will fail with an exception.
+</Warning>
+
+## Field types
+
+### String fields
+
+```json
+{
+  "attendeeName": {
+    "type": "string",
+    "title": "Attendee Name",
+    "description": "Full name of the meeting attendee",
+    "default": "Guest",
+    "minLength": 2,
+    "maxLength": 100
+  }
+}
+```
+
+### Number fields
+
+```json
+{
+  "duration": {
+    "type": "integer",
+    "title": "Duration (minutes)",
+    "minimum": 15,
+    "maximum": 240,
+    "default": 30
+  },
+  "price": {
+    "type": "number",
+    "title": "Price",
+    "minimum": 0,
+    "multipleOf": 0.01
+  }
+}
+```
+
+### Boolean fields
+
+```json
+{
+  "sendReminder": {
+    "type": "boolean",
+    "title": "Send Email Reminder",
+    "default": true
+  }
+}
+```
+
+### Enum fields
+
+```json
+{
+  "priority": {
+    "type": "string",
+    "title": "Priority Level",
+    "enum": ["low", "medium", "high"],
+    "default": "medium"
+  }
+}
+```
+
+### Array fields
+
+```json
+{
+  "tags": {
+    "type": "array",
+    "title": "Tags",
+    "items": {
+      "type": "string"
+    },
+    "minItems": 1,
+    "maxItems": 10
+  }
+}
+```
+
+### Nested objects
+
+```json
+{
+  "attendee": {
+    "type": "object",
+    "title": "Attendee Information",
+    "required": ["name", "email"],
+    "properties": {
+      "name": {
+        "type": "string",
+        "title": "Name"
+      },
+      "email": {
+        "type": "string",
+        "title": "Email",
+        "format": "email"
+      },
+      "phone": {
+        "type": "string",
+        "title": "Phone Number"
+      }
+    }
+  }
+}
+```
+
+## Dynamic dropdowns with fetchers
+
+Use the custom `x-fetcher` property to populate fields from a data fetcher:
+
+```json IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeeting.json:38-44
+{
+  "eventTypeId": {
+    "type": "integer",
+    "title": "Event Type ID",
+    "x-fetcher": "GetEventTypesById"
+  }
+}
+```
+
+The fetcher key must match a registered `IFlowDataFetcher`:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Fetchers/GetEventTypesByIdFetcher.cs:15
+public string FetcherKey => "GetEventTypesById";
+```
+
+When the UI renders this field, it calls:
+
+```csharp
+await FlowAppManager.FetchOptionsAsync(
+    appKey: "cal_com",
+    fetcherKey: "GetEventTypesById",
+    context: currentFormState,
+    integration: userIntegration
+);
+```
+
+The fetcher returns options:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Fetchers/GetEventTypesByIdFetcher.cs:38-43
+return result?.Data?.Select(e => new DynamicOption
+{
+    Label = $"{e.Title} ({e.Length}m)",
+    Value = e.Id,
+    Description = $"ID: {e.Id}"
+}).ToList() ?? new();
+```
+
+### Context-dependent fetchers
+
+Fetchers receive the current form state via the `context` parameter:
+
+```csharp
+public async Task<List<DynamicOption>> FetchOptionsAsync(
+    BusinessAppIntegrationDecryptedModel? integration, 
+    JsonElement context)
+{
+    // Get username from form
+    if (context.TryGetProperty("username", out var usernameElement))
+    {
+        var username = usernameElement.GetString();
+        // Fetch event types only for this user
+    }
+}
+```
+
+This enables dependent dropdowns:
+
+```json
+{
+  "properties": {
+    "username": {
+      "type": "string",
+      "title": "Username"
+    },
+    "eventTypeId": {
+      "type": "integer",
+      "title": "Event Type",
+      "x-fetcher": "GetEventTypesByUsername"
+    }
+  }
+}
+```
+
+## Conditional schemas with oneOf
+
+Use `oneOf` to define mutually exclusive field groups:
+
+```json IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeeting.json:34-74
+{
+  "oneOf": [
+    {
+      "title": "By Event ID",
+      "required": ["eventTypeId"],
+      "properties": {
+        "eventTypeId": {
+          "type": "integer",
+          "title": "Event Type ID",
+          "x-fetcher": "GetEventTypesById"
+        }
+      }
+    },
+    {
+      "title": "By User & Slug",
+      "required": ["username", "eventTypeSlug"],
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "Username"
+        },
+        "eventTypeSlug": {
+          "type": "string",
+          "title": "Event Type Slug"
+        }
+      }
+    },
+    {
+      "title": "By Team & Slug",
+      "required": ["teamSlug", "eventTypeSlug"],
+      "properties": {
+        "teamSlug": {
+          "type": "string",
+          "title": "Team Slug"
+        },
+        "eventTypeSlug": {
+          "type": "string",
+          "title": "Event Type Slug"
+        }
+      }
+    }
+  ]
+}
+```
+
+The UI presents a mode selector, showing only the relevant fields.
+
+### Handling oneOf in actions
+
+Check which variant was provided:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeetingAction.cs:64-77
+if (input.TryGetProperty("eventTypeId", out var id))
+{
+    request.EventTypeId = id.GetInt32();
+}
+else if (input.TryGetProperty("teamSlug", out var team))
+{
+    request.TeamSlug = team.GetString();
+    request.EventTypeSlug = input.GetProperty("eventTypeSlug").GetString();
+}
+else
+{
+    request.Username = input.GetProperty("username").GetString();
+    request.EventTypeSlug = input.GetProperty("eventTypeSlug").GetString();
+}
+```
+
+## Validation
+
+All inputs are validated at runtime before action execution:
+
+```csharp IqraInfrastructure/Managers/FlowApp/FlowAppManager.cs:289-299
+var schemaJson = action.GetInputSchemaJson();
+var validationResult = await _schemaValidator.ValidateAsync(
+    jsonElement,
+    schemaJson,
+    $"{appKey}_{actionKey}" // Cache key
+);
+
+if (!validationResult.Success)
+{
+    return ActionExecutionResult.Failure("VALIDATION_ERROR", validationResult.Message);
+}
+```
+
+### Common validation rules
+
+<Tabs>
+
+<Tab title="Required fields">
+```json
+{
+  "type": "object",
+  "required": ["email", "name"],
+  "properties": {
+    "email": { "type": "string" },
+    "name": { "type": "string" }
+  }
+}
+```
+</Tab>
+
+<Tab title="String patterns">
+```json
+{
+  "email": {
+    "type": "string",
+    "format": "email"
+  },
+  "phone": {
+    "type": "string",
+    "pattern": "^\\+?[1-9]\\d{1,14}$"
+  }
+}
+```
+</Tab>
+
+<Tab title="Number ranges">
+```json
+{
+  "age": {
+    "type": "integer",
+    "minimum": 0,
+    "maximum": 120
+  },
+  "percentage": {
+    "type": "number",
+    "minimum": 0,
+    "maximum": 100,
+    "exclusiveMaximum": false
+  }
+}
+```
+</Tab>
+
+<Tab title="Array constraints">
+```json
+{
+  "tags": {
+    "type": "array",
+    "minItems": 1,
+    "maxItems": 5,
+    "uniqueItems": true,
+    "items": {
+      "type": "string",
+      "minLength": 2
+    }
+  }
+}
+```
+</Tab>
+
+</Tabs>
+
+## Scriban template support
+
+All string fields support Scriban templates at runtime:
+
+```json
+{
+  "attendeeName": {
+    "type": "string",
+    "title": "Attendee Name"
+  }
+}
+```
+
+Users can enter:
+
+```
+{{ customer.firstName }} {{ customer.lastName }}
+```
+
+Which resolves before validation:
+
+```csharp IqraInfrastructure/Managers/FlowApp/FlowAppManager.cs:274-280
+var renderResult = await _scribanService.RenderDictionaryAsync(rawInputs, sessionContext);
+
+if (!renderResult.Success)
+{
+    return ActionExecutionResult.Failure("TEMPLATE_ERROR", $"Failed to render inputs: {renderResult.Message}");
+}
+```
+
+<Note>
+Templates are resolved **before** schema validation, so the final rendered value must still satisfy the schema.
+</Note>
+
+## Schema file location requirements
+
+The schema generator enforces strict file placement:
+
+<CodeGroup>
+
+```text ✅ Correct
+Actions/
+├── BookMeetingAction.cs
+└── BookMeeting.json          ← Same directory
+```
+
+```text ❌ Wrong - Different directory
+Actions/
+├── BookMeetingAction.cs
+└── Schemas/
+    └── BookMeeting.json      ← Will not be found
+```
+
+```text ❌ Wrong - Name mismatch
+Actions/
+├── BookMeetingAction.cs
+└── CreateBooking.json        ← Doesn't match action name
+```
+
+</CodeGroup>
+
+If the schema is not found:
+
+```csharp IqraGenerators/FlowAppSchemaGenerator.cs:87-90
+if (jsonFile == null)
+{
+    throw new Exception($"JSON file '{baseName}.json' not found in the same directory as '{sourceFilePath}'");
+}
+```
+
+## Best practices
+
+<AccordionGroup>
+
+<Accordion title="Provide clear titles and descriptions">
+```json
+{
+  "attendeeEmail": {
+    "type": "string",
+    "title": "Attendee Email",
+    "description": "The email address will receive a calendar invite and reminders",
+    "format": "email"
+  }
+}
+```
+
+Descriptions appear as tooltips in the UI.
+</Accordion>
+
+<Accordion title="Set sensible defaults">
+```json
+{
+  "timeZone": {
+    "type": "string",
+    "title": "Time Zone",
+    "default": "UTC"
+  },
+  "sendReminder": {
+    "type": "boolean",
+    "title": "Send Reminder",
+    "default": true
+  }
+}
+```
+
+Defaults reduce friction for common use cases.
+</Accordion>
+
+<Accordion title="Use format validators">
+Leverage built-in JSON Schema formats:
+
+```json
+{
+  "email": { "type": "string", "format": "email" },
+  "website": { "type": "string", "format": "uri" },
+  "startDate": { "type": "string", "format": "date-time" }
+}
+```
+</Accordion>
+
+<Accordion title="Keep schemas flat when possible">
+Flat schemas are easier for AI to populate:
+
+```json
+// ✅ Good - Flat structure
+{
+  "attendeeName": { "type": "string" },
+  "attendeeEmail": { "type": "string" }
+}
+
+// ❌ Avoid unnecessary nesting
+{
+  "attendee": {
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "email": { "type": "string" }
+    }
+  }
+}
+```
+
+Use nesting only when logically required.
+</Accordion>
+
+<Accordion title="Document oneOf variants clearly">
+```json
+{
+  "oneOf": [
+    {
+      "title": "Book by Event ID (Recommended)",
+      "description": "Use when you have a specific event type ID",
+      "required": ["eventTypeId"],
+      "properties": { ... }
+    },
+    {
+      "title": "Book by Username (Legacy)",
+      "description": "Use for personal event types",
+      "required": ["username", "eventTypeSlug"],
+      "properties": { ... }
+    }
+  ]
+}
+```
+</Accordion>
+
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+
+<Accordion title="Compilation error: JSON file not found">
+Ensure:
+1. JSON file is in the **same directory** as the action class
+2. File name matches the action name (minus "Action" suffix)
+3. JSON file is included in the project with `AdditionalFiles` build action
+</Accordion>
+
+<Accordion title="Runtime error: VALIDATION_ERROR">
+Check:
+1. Schema matches the data structure your code expects
+2. Required fields are marked correctly
+3. Data types match (string vs integer, etc.)
+4. Scriban templates resolve to valid values
+</Accordion>
+
+<Accordion title="Fetcher not populating dropdown">
+Verify:
+1. `FetcherKey` in the fetcher class matches `x-fetcher` in schema
+2. Fetcher is registered in the app's `DataFetchers` list
+3. Integration credentials are valid
+4. Fetcher is not throwing an exception (check logs)
+</Accordion>
+
+</AccordionGroup>
+
+## Next steps
+
+<Card title="Examples" icon="lightbulb" href="/developers/flowapp/overview/examples">
+Explore complete FlowApp implementations with advanced schemas
+</Card>

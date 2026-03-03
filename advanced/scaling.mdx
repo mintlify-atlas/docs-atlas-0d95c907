@@ -1,0 +1,581 @@
+---
+title: Horizontal scaling strategies
+description: Scale Iqra AI infrastructure to handle thousands of concurrent conversations
+---
+
+## Overview
+
+Iqra AI is designed for horizontal scaling from the ground up. The architecture separates concerns between Proxy servers (media handling), Backend servers (logic processing), and Background services (async tasks), allowing you to scale each component independently based on workload characteristics.
+
+This guide covers strategies for scaling from hundreds to thousands of concurrent sessions.
+
+## Scaling architecture
+
+### Component responsibilities
+
+Understanding each component's role is critical for effective scaling:
+
+<Accordion title="Proxy servers">
+  **Primary function**: WebRTC/SIP media streaming and RTP packet handling
+
+  **Resource profile**:
+  - High network I/O (audio streaming)
+  - Moderate CPU (codec processing)
+  - Low memory per connection
+  - Stateful (maintains WebRTC peer connections)
+
+  **Scaling characteristics**:
+  - Linear scaling with connection count
+  - Network bandwidth is typically the bottleneck
+  - Plan for 100-200 concurrent connections per server
+</Accordion>
+
+<Accordion title="Backend servers">
+  **Primary function**: Agent logic, LLM integration, and business rules
+
+  **Resource profile**:
+  - High CPU (LLM inference, script execution)
+  - High memory (conversation context, state management)
+  - Moderate network I/O (API calls to LLM providers)
+  - Stateful (maintains active session state)
+
+  **Scaling characteristics**:
+  - Scales with complexity of agent logic
+  - Memory increases with conversation context size
+  - Plan for 50-100 concurrent sessions per server
+</Accordion>
+
+<Accordion title="Background services">
+  **Primary function**: Async processing, scheduled tasks, cleanup
+
+  **Resource profile**:
+  - Variable CPU (depends on job type)
+  - Moderate memory
+  - Low network I/O
+  - Mostly stateless
+
+  **Scaling characteristics**:
+  - Can run as singleton or distributed
+  - Scale based on job queue depth
+  - Use work queue for distribution
+</Accordion>
+
+## Capacity planning
+
+### Baseline requirements
+
+Start with these baseline server specifications:
+
+**Proxy Server (100 concurrent connections)**
+- 4 vCPU
+- 8 GB RAM
+- 1 Gbps network
+- 50 GB SSD storage
+
+**Backend Server (50 concurrent sessions)**
+- 8 vCPU
+- 16 GB RAM
+- 500 Mbps network
+- 100 GB SSD storage
+
+**Background Service**
+- 4 vCPU
+- 8 GB RAM
+- 100 Mbps network
+- 100 GB SSD storage
+
+### Calculating required capacity
+
+Determine how many servers you need:
+
+<Steps>
+  <Step title="Measure peak concurrent sessions">
+    Use analytics to determine your peak concurrent session count.
+
+    ```csharp
+    var activeNodes = await serverMetricsManager.GetAllActiveNodesAsync();
+    var totalActiveSessions = activeNodes
+        .OfType<BackendServerStatusData>()
+        .Sum(n => n.CurrentActiveTelephonySessionCount +
+                  n.CurrentActiveWebSessionCount);
+    ```
+  </Step>
+
+  <Step title="Add overhead for peaks">
+    Multiply peak sessions by 1.5x to handle traffic spikes:
+
+    ```
+    Required capacity = Peak sessions × 1.5
+    ```
+  </Step>
+
+  <Step title="Calculate server count">
+    Divide by capacity per server:
+
+    ```
+    Backend servers needed = Required capacity ÷ 50
+    Proxy servers needed = Required capacity ÷ 100
+    ```
+  </Step>
+
+  <Step title="Add redundancy">
+    Add at least one additional server per region for failover:
+
+    ```
+    Final count = Calculated servers + 1
+    ```
+  </Step>
+</Steps>
+
+### Example calculation
+
+For a deployment with 500 peak concurrent sessions:
+
+```
+Required capacity = 500 × 1.5 = 750 sessions
+Backend servers = 750 ÷ 50 = 15 servers + 1 redundant = 16 servers
+Proxy servers = 750 ÷ 100 = 7.5 → 8 servers + 1 redundant = 9 servers
+```
+
+<Note>
+These are conservative estimates. Monitor actual resource utilization and adjust based on your specific agent complexity and conversation patterns.
+</Note>
+
+## Adding capacity
+
+### Adding servers to existing regions
+
+Add servers to handle increased load:
+
+```csharp
+var regionManager = serviceProvider.GetRequiredService<RegionManager>();
+
+// Add additional backend server
+var backendConfig = new CreateUpdateServerRequestModel {
+    Endpoint = "backend-us-east-3.yourdomain.com",
+    Type = ServerTypeEnum.Backend,
+    APIKey = GenerateSecureApiKey(),
+    SIPPort = 5060,
+    UseSSL = true,
+    IsDevelopmentServer = false
+};
+
+await regionManager.AddOrUpdateRegionServer(
+    "add", "US-EAST", null, backendConfig
+);
+
+// Disable maintenance mode to activate
+await regionManager.DisableRegionServerMaintenance("US-EAST", serverId);
+await regionManager.EnableRegionServer("US-EAST", serverId);
+```
+
+<Tip>
+New servers are created in disabled and maintenance mode by default. This allows you to verify the server is healthy before routing traffic to it.
+</Tip>
+
+### Load testing new capacity
+
+Before enabling a new server for production traffic:
+
+<Steps>
+  <Step title="Deploy the server">
+    Install and configure the Iqra AI software on the new hardware.
+  </Step>
+
+  <Step title="Add to region configuration">
+    Register the server in the region using the API or admin dashboard.
+  </Step>
+
+  <Step title="Verify metrics reporting">
+    Confirm the server is reporting to the metrics system:
+
+    ```csharp
+    var status = await serverMetricsManager.GetServerStatusData(
+        "US-EAST", "backend-us-east-3"
+    );
+
+    if (status != null && status.RuntimeStatus == NodeRuntimeStatus.Healthy) {
+        Console.WriteLine("Server is healthy and ready");
+    }
+    ```
+  </Step>
+
+  <Step title="Run load tests">
+    Use your load testing tool to simulate traffic while the server is still in maintenance mode.
+  </Step>
+
+  <Step title="Enable for production">
+    Once validated, disable maintenance mode and enable the server.
+  </Step>
+</Steps>
+
+## Auto-scaling strategies
+
+### Kubernetes horizontal pod autoscaling
+
+Deploy Iqra AI on Kubernetes for automatic scaling:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iqra-backend-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iqra-backend
+  minReplicas: 2
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+```
+
+<Warning>
+Be conservative with scale-down policies for stateful services. Backend servers maintain active sessions that should complete gracefully before shutdown.
+</Warning>
+
+### Custom autoscaling based on session count
+
+Implement application-aware autoscaling:
+
+```csharp
+public class SessionBasedAutoscaler
+{
+    private readonly ServerMetricsManager _metricsManager;
+    private readonly RegionManager _regionManager;
+    private const int TARGET_SESSIONS_PER_SERVER = 40;
+    private const int MAX_SERVERS_PER_REGION = 20;
+
+    public async Task<ScalingDecision> EvaluateScalingNeed(string regionId)
+    {
+        var nodes = await _metricsManager.GetAllActiveNodesAsync();
+        var regionBackends = nodes
+            .OfType<BackendServerStatusData>()
+            .Where(n => n.RegionId == regionId)
+            .ToList();
+
+        if (!regionBackends.Any())
+        {
+            return new ScalingDecision { Action = ScaleAction.None };
+        }
+
+        var totalSessions = regionBackends.Sum(n =>
+            n.CurrentActiveTelephonySessionCount +
+            n.CurrentActiveWebSessionCount
+        );
+
+        var currentServerCount = regionBackends.Count;
+        var optimalServerCount = (int)Math.Ceiling(
+            totalSessions / (double)TARGET_SESSIONS_PER_SERVER
+        );
+
+        // Add buffer
+        optimalServerCount = Math.Max(optimalServerCount, 2);
+
+        if (optimalServerCount > currentServerCount &&
+            currentServerCount < MAX_SERVERS_PER_REGION)
+        {
+            return new ScalingDecision
+            {
+                Action = ScaleAction.ScaleUp,
+                TargetCount = Math.Min(optimalServerCount, MAX_SERVERS_PER_REGION),
+                Reason = $"Current load ({totalSessions} sessions) requires {optimalServerCount} servers"
+            };
+        }
+
+        // Only scale down if utilization is < 50% of target
+        var utilizationThreshold = TARGET_SESSIONS_PER_SERVER * 0.5;
+        var avgSessionsPerServer = totalSessions / (double)currentServerCount;
+
+        if (avgSessionsPerServer < utilizationThreshold &&
+            currentServerCount > 2)
+        {
+            return new ScalingDecision
+            {
+                Action = ScaleAction.ScaleDown,
+                TargetCount = Math.Max(optimalServerCount, 2),
+                Reason = $"Low utilization ({avgSessionsPerServer:F1} sessions/server)"
+            };
+        }
+
+        return new ScalingDecision { Action = ScaleAction.None };
+    }
+}
+```
+
+## Graceful draining
+
+When removing capacity, drain sessions gracefully:
+
+<Steps>
+  <Step title="Enable maintenance mode">
+    Put the server in maintenance mode to stop new sessions:
+
+    ```csharp
+    await regionManager.EnableRegionServerMaintenance(
+        "US-EAST",
+        serverId,
+        "Scheduled scale-down",
+        "Auto-scaling reducing capacity"
+    );
+    ```
+  </Step>
+
+  <Step title="Monitor active sessions">
+    Wait for active sessions to complete naturally:
+
+    ```csharp
+    while (true)
+    {
+        var status = await serverMetricsManager.GetServerStatusData(
+            "US-EAST", serverId
+        );
+
+        if (status is BackendServerStatusData backend)
+        {
+            var activeSessions = backend.CurrentActiveTelephonySessionCount +
+                               backend.CurrentActiveWebSessionCount;
+
+            if (activeSessions == 0)
+                break;
+
+            Console.WriteLine($"Waiting for {activeSessions} sessions to complete...");
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(10));
+    }
+    ```
+  </Step>
+
+  <Step title="Disable the server">
+    Once sessions are complete, disable the server:
+
+    ```csharp
+    await regionManager.DisableRegionServer(
+        "US-EAST",
+        serverId,
+        "Server removed from rotation",
+        "Auto-scaling capacity reduction"
+    );
+    ```
+  </Step>
+
+  <Step title="Shutdown the application">
+    Signal the application to shutdown gracefully.
+  </Step>
+</Steps>
+
+## Database scaling
+
+### MongoDB scaling
+
+Iqra AI uses MongoDB for persistent storage. Scale your database infrastructure:
+
+<Accordion title="Replica sets">
+  Use MongoDB replica sets for high availability:
+
+  ```
+  Primary: handles all writes
+  Secondary 1: read replica + failover
+  Secondary 2: read replica + failover
+  ```
+
+  Configure connection string:
+  ```
+  mongodb://primary:27017,secondary1:27017,secondary2:27017/iqra?replicaSet=rs0
+  ```
+</Accordion>
+
+<Accordion title="Sharding">
+  For extremely large deployments (millions of agents), implement sharding:
+
+  - Shard by `OrganizationId` to distribute data evenly
+  - Use a dedicated config server cluster
+  - Deploy mongos routers in each region
+</Accordion>
+
+<Accordion title="Read preference">
+  Optimize read performance:
+
+  ```csharp
+  var client = new MongoClient(new MongoClientSettings
+  {
+      Servers = mongoServers,
+      ReadPreference = ReadPreference.SecondaryPreferred
+  });
+  ```
+
+  This distributes read load across replicas while maintaining consistency.
+</Accordion>
+
+### Redis scaling
+
+Redis handles real-time metrics and session state:
+
+<Accordion title="Redis Cluster">
+  For high throughput, use Redis Cluster:
+
+  ```
+  6 nodes minimum (3 masters, 3 replicas)
+  Hash slots distributed across masters
+  Automatic failover
+  ```
+</Accordion>
+
+<Accordion title="Redis Sentinel">
+  For high availability without sharding:
+
+  ```
+  1 master + 2 replicas
+  3 sentinel processes for monitoring
+  Automatic failover on master failure
+  ```
+</Accordion>
+
+## Network optimization
+
+### Load balancing
+
+Use application-aware load balancing:
+
+**For HTTP/WebSocket traffic:**
+- Use layer 7 load balancer (ALB, NGINX, HAProxy)
+- Sticky sessions based on session ID
+- Health check endpoints monitoring runtime status
+
+**For SIP/RTP traffic:**
+- Use layer 4 load balancer (NLB)
+- UDP support for RTP
+- Preserve source IP for geo-routing
+
+### CDN for static assets
+
+Offload static content delivery:
+
+- Dashboard UI assets → CloudFront/Cloudflare
+- Agent avatar images → CDN
+- Shared media files → CDN
+
+This reduces load on application servers and improves global latency.
+
+## Monitoring scaling effectiveness
+
+Track these metrics to validate scaling decisions:
+
+### Utilization metrics
+
+```csharp
+var backendNodes = activeNodes.OfType<BackendServerStatusData>();
+
+var metrics = new {
+    // Capacity utilization
+    CapacityUtilization = backendNodes.Sum(n =>
+        n.CurrentActiveTelephonySessionCount +
+        n.CurrentActiveWebSessionCount
+    ) / (double)backendNodes.Sum(n => n.MaxConcurrentCallsCount),
+
+    // Resource utilization
+    AvgCpuUsage = backendNodes.Average(n => n.CpuUsagePercent),
+    AvgMemoryUsage = backendNodes.Average(n => n.MemoryUsagePercent),
+
+    // Distribution
+    SessionStdDev = CalculateStdDev(backendNodes.Select(n =>
+        n.CurrentActiveTelephonySessionCount +
+        n.CurrentActiveWebSessionCount
+    ))
+};
+
+Console.WriteLine($"Capacity: {metrics.CapacityUtilization:P1}");
+Console.WriteLine($"CPU: {metrics.AvgCpuUsage:F1}%");
+Console.WriteLine($"Memory: {metrics.AvgMemoryUsage:F1}%");
+```
+
+### Target ranges
+
+Optimal operation:
+- **Capacity utilization**: 40-70%
+- **CPU usage**: 30-60%
+- **Memory usage**: 40-70%
+- **Session distribution**: Low standard deviation (balanced load)
+
+## Best practices
+
+### Do's
+
+1. **Scale proactively** - Add capacity before you hit limits, not after
+2. **Test at scale** - Load test with realistic traffic patterns
+3. **Monitor trends** - Track growth rates to predict future capacity needs
+4. **Document baselines** - Record performance characteristics at different load levels
+5. **Use infrastructure as code** - Automate server provisioning for rapid scaling
+
+### Don'ts
+
+1. **Don't scale down aggressively** - Be conservative removing capacity
+2. **Don't ignore database scaling** - Application servers aren't the only bottleneck
+3. **Don't forget network limits** - Check NIC throughput limits
+4. **Don't scale without monitoring** - Ensure metrics are flowing before scaling decisions
+5. **Don't mix workload types** - Keep Proxy and Backend servers separate
+
+## Troubleshooting
+
+<Accordion title="New servers not receiving traffic">
+  Check:
+  - Server is enabled (not in maintenance mode or disabled)
+  - Server is reporting healthy status to metrics system
+  - Load balancer health checks are passing
+  - Firewall rules allow inbound connections
+  - DNS/service discovery has updated
+</Accordion>
+
+<Accordion title="Unbalanced load distribution">
+  Causes:
+  - Sticky sessions with long-lived connections
+  - Some servers in degraded state
+  - Heterogeneous hardware (different server specs)
+  - Load balancer algorithm (switch to least-connections)
+</Accordion>
+
+<Accordion title="Database becomes bottleneck">
+  Solutions:
+  - Add read replicas for read-heavy workloads
+  - Enable query result caching in application
+  - Optimize slow queries (use database profiler)
+  - Implement connection pooling
+  - Consider MongoDB sharding for write-heavy workloads
+</Accordion>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-region" icon="globe" href="/advanced/multi-region">
+    Deploy across multiple geographic regions
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/advanced/monitoring">
+    Set up comprehensive observability
+  </Card>
+</CardGroup>

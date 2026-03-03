@@ -1,0 +1,211 @@
+---
+title: Using Iqra Cloud
+description: Deploy production-ready AI agents with the fully managed Iqra Cloud SaaS platform
+---
+
+Iqra Cloud is the fully managed, production-ready platform that eliminates infrastructure complexity and lets you focus on building conversational AI agents.
+
+## Overview
+
+Iqra Cloud provides enterprise-grade infrastructure with automatic scaling, multi-region deployment, and comprehensive management tools—all without requiring you to manage servers, databases, or DevOps workflows.
+
+<Note>
+  Iqra Cloud includes exclusive features not available in the self-hosted version, including the multi-tenant billing system and whitelabeling management for agencies.
+</Note>
+
+## Key advantages
+
+### Managed infrastructure
+
+All critical dependencies are fully managed:
+- **MongoDB** - Replica sets with automatic backups
+- **Redis** - High-availability clusters with failover
+- **Milvus** - Vector database optimized for embeddings
+- **RustFS (S3)** - Distributed object storage for media
+- **Edge network** - Multi-region routing for low latency
+
+### Automatic scaling
+
+The platform automatically scales resources based on demand:
+- Dynamic call capacity allocation
+- Auto-scaling backend servers per region
+- Intelligent load balancing across clusters
+- No manual intervention required
+
+### Enterprise features
+
+<CardGroup cols={2}>
+  <Card title="Multi-tenant billing" icon="credit-card">
+    Built-in usage tracking, metering, and billing system for SaaS businesses
+  </Card>
+  <Card title="Whitelabeling" icon="palette">
+    Rebrand the entire platform with custom domains, logos, and pricing for agency resale
+  </Card>
+  <Card title="SLA guarantees" icon="shield-check">
+    99.9% uptime commitment with dedicated support
+  </Card>
+  <Card title="Compliance" icon="file-certificate">
+    SOC 2 Type II, GDPR, and regional data residency options
+  </Card>
+</CardGroup>
+
+## Getting started
+
+<Steps>
+  <Step title="Create an account">
+    Navigate to [app.iqra.bot](https://app.iqra.bot) and sign up for a free account.
+  </Step>
+  
+  <Step title="Configure your first agent">
+    Use the Visual IDE to build your conversational flow:
+    - Design the conversation graph
+    - Configure AI models and voices
+    - Set up integrations and tools
+  </Step>
+  
+  <Step title="Connect telephony">
+    Integrate your SIP trunk provider:
+    - Twilio
+    - Telnyx
+    - Vonage
+    - Any SIP-compliant carrier
+  </Step>
+  
+  <Step title="Deploy globally">
+    Select your deployment regions to optimize for latency:
+    - US East (Virginia)
+    - US West (Oregon)
+    - EU Central (Frankfurt)
+    - Asia Pacific (Singapore)
+  </Step>
+</Steps>
+
+## Pricing model
+
+Iqra Cloud uses consumption-based pricing:
+
+- **Free tier** - 100 minutes/month for development and testing
+- **Pay-as-you-go** - $0.05/minute for production calls
+- **Enterprise** - Custom pricing for high-volume deployments
+
+<Note>
+  All AI model costs (OpenAI, ElevenLabs, etc.) are separate and billed through your own API keys configured in the platform.
+</Note>
+
+## Security and compliance
+
+### Data encryption
+
+- All data encrypted at rest using AES-256
+- TLS 1.3 for data in transit
+- End-to-end encryption for secure sessions (PCI-DSS)
+
+### Authentication
+
+- OAuth 2.0 and SAML 2.0 support
+- Multi-factor authentication (MFA)
+- Role-based access control (RBAC)
+- API key management with granular permissions
+
+### Compliance certifications
+
+- **SOC 2 Type II** - Annual audits for security controls
+- **GDPR** - Full compliance with EU data protection
+- **HIPAA** - Available on Enterprise plans
+- **PCI-DSS** - Level 1 Service Provider
+
+## Regional data residency
+
+For organizations with data sovereignty requirements:
+
+<Tabs>
+  <Tab title="United States">
+    All data stored in AWS US-East-1 (Virginia) or US-West-2 (Oregon) regions.
+  </Tab>
+  <Tab title="European Union">
+    All data stored in AWS EU-Central-1 (Frankfurt) with GDPR compliance.
+  </Tab>
+  <Tab title="GCC Countries">
+    Dedicated deployments available in Bahrain or UAE for Gulf nations with local data residency laws.
+  </Tab>
+</Tabs>
+
+## Support tiers
+
+### Community (Free)
+
+- Discord community access
+- Public documentation
+- GitHub issues
+
+### Standard (Included)
+
+- Email support (48-hour response)
+- Video tutorials
+- Knowledge base access
+
+### Enterprise (Custom)
+
+- Dedicated Slack channel
+- Video call support
+- Custom SLAs (99.99% uptime)
+- On-premise deployment assistance
+
+## Migration from self-hosted
+
+Migrating an existing self-hosted deployment to Iqra Cloud:
+
+<Steps>
+  <Step title="Export your agents">
+    Use the Admin Dashboard to export agent configurations as JSON.
+  </Step>
+  
+  <Step title="Import to Cloud">
+    Upload the exported configurations to your Cloud workspace.
+  </Step>
+  
+  <Step title="Reconfigure integrations">
+    Re-enter API keys for third-party services (OpenAI, Twilio, etc.) in the Cloud environment.
+  </Step>
+  
+  <Step title="Update DNS and webhooks">
+    Point your SIP trunks and webhooks to the new Cloud endpoints.
+  </Step>
+</Steps>
+
+<Warning>
+  Historical call recordings and conversation logs are not automatically migrated. Export these separately if needed for compliance.
+</Warning>
+
+## Cloud vs self-hosted comparison
+
+| Feature | Iqra Cloud | Self-Hosted |
+|---------|------------|-------------|
+| Infrastructure management | Fully managed | Manual setup |
+| Agent engine | ✓ | ✓ |
+| Visual IDE | ✓ | ✓ |
+| FlowApps system | ✓ | ✓ |
+| Multi-region routing | ✓ | Manual configuration |
+| Multi-tenant billing | ✓ | ✗ |
+| Whitelabeling | ✓ | ✗ |
+| Automatic scaling | ✓ | Manual |
+| Uptime SLA | 99.9% | Self-managed |
+| Support | Priority | Community |
+| Compliance certifications | SOC 2, GDPR, PCI | Self-managed |
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Build your first agent" icon="robot" href="/build/quickstart">
+    Follow the quickstart guide to create your first conversational AI
+  </Card>
+  <Card title="Connect telephony" icon="phone" href="/integrations/telephony">
+    Integrate with Twilio, Telnyx, or other SIP providers
+  </Card>
+  <Card title="API reference" icon="code" href="/api-reference">
+    Explore the REST API for programmatic control
+  </Card>
+  <Card title="Contact sales" icon="envelope" href="https://www.iqra.bot/contact">
+    Discuss Enterprise plans and custom requirements
+  </Card>
+</CardGroup>

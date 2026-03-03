@@ -1,0 +1,458 @@
+---
+title: Action flows
+description: Build deterministic workflows with conditional logic, loops, and variable control
+---
+
+Action flows combine the probabilistic nature of AI with the reliability of deterministic code execution. While your agent handles conversations dynamically, action flows ensure critical business logic runs predictably.
+
+## Philosophy
+
+Iqra AI maintains a clear separation:
+
+- **AI layer** - Handles natural language understanding and generation (probabilistic)
+- **Deterministic layer** - Handles business logic, data validation, and workflow control (guaranteed)
+
+Action flows live in the deterministic layer, ensuring your business rules are never subject to LLM hallucination or uncertainty.
+
+## Core concepts
+
+### Variables as state
+
+Variables are the foundation of deterministic control. Unlike AI memory (which is fuzzy), variables store exact values:
+
+```json
+{
+  "customer_authenticated": false,
+  "pin_attempts": 0,
+  "account_balance": 0,
+  "max_attempts": 3
+}
+```
+
+**Variable properties:**
+- **Type safety** - String, Number, or Boolean
+- **Visibility control** - Show/hide from AI
+- **Edit permissions** - AI-editable or read-only
+- **Template access** - Use in Scriban templates
+
+See [Visual IDE](/building/visual-ide#variables) for complete variable configuration.
+
+### System tools as actions
+
+System tools are deterministic operations that modify state or control flow:
+
+- **DTMF Input** - Collect exact keypad digits
+- **Go To Node** - Jump to specific conversation points
+- **End Call** - Terminate with certainty
+- **Send SMS** - Guaranteed message delivery
+- **Add Script** - Dynamic context loading
+
+### Conditional routing
+
+Edges between nodes can represent different outcomes, creating if/else logic:
+
+```
+DTMF Input Node (Outcomes):
+  ├─ Value: "1" → Port: sales_path
+  ├─ Value: "2" → Port: support_path
+  └─ Timeout → Port: error_path
+```
+
+## Common patterns
+
+### If/else branching
+
+Implement conditional logic using DTMF outcomes or Custom Tool responses.
+
+**Example: Menu selection**
+
+<Steps>
+  <Step title="Present options">
+    ```
+    AI Response: "Press 1 for account balance, 2 to speak with an agent, or 3 to end the call."
+    ```
+  </Step>
+  
+  <Step title="Collect input">
+    ```
+    DTMF Input Node:
+      - MaxLength: 1
+      - Timeout: 5000
+      - Outcomes:
+        - Value: "1" → balance_flow
+        - Value: "2" → agent_transfer
+        - Value: "3" → end_call
+        - Timeout → retry_prompt
+    ```
+  </Step>
+  
+  <Step title="Execute path">
+    Each outcome connects to a different workflow branch that executes deterministically.
+  </Step>
+</Steps>
+
+### Loops and retries
+
+Use **Go To Node** to create retry logic for failed operations.
+
+**Example: PIN verification with retry limit**
+
+```
+┌─→ AI Response: "Please enter your 4-digit PIN"
+│   ↓
+│   DTMF Input (EncryptInput: true, VariableName: "user_pin")
+│   ↓
+│   Custom Tool: Validate PIN
+│   ├─ Success → Continue to Main Menu
+│   └─ Failure
+│       ↓
+│       Custom Tool: Increment pin_attempts variable
+│       ↓
+│       Custom Tool: Check if pin_attempts < max_attempts
+│       ├─ True → Go To Node: "Please enter your 4-digit PIN" (loop back)
+│       └─ False → End Call: "Too many attempts. Goodbye."
+```
+
+**Key components:**
+- Variable tracking (`pin_attempts`)
+- Conditional checking (attempts < max)
+- Loop back (Go To Node)
+- Exit condition (End Call)
+
+### State machines
+
+Model complex workflows as states and transitions.
+
+**Example: Payment processing**
+
+```
+State: COLLECT_AMOUNT
+  → AI: "What amount would you like to pay?"
+  → User Query: [amount]
+  → Set variable: payment_amount
+  → Transition to: CONFIRM_AMOUNT
+
+State: CONFIRM_AMOUNT
+  → AI: "You want to pay {{ variables.payment_amount }} dollars. Is that correct? Press 1 for yes, 2 for no."
+  → DTMF Input
+     ├─ "1" → Transition to: PROCESS_PAYMENT
+     └─ "2" → Transition to: COLLECT_AMOUNT
+
+State: PROCESS_PAYMENT
+  → Custom Tool: Charge payment_amount
+  → Set variable: transaction_id
+  → Transition to: SEND_RECEIPT
+
+State: SEND_RECEIPT
+  → Send SMS: "Payment confirmed. Transaction ID: {{ variables.transaction_id }}"
+  → End Call
+```
+
+Each state is a node or group of nodes, transitions are edges.
+
+### Dynamic script loading
+
+Load different conversation modules based on runtime conditions.
+
+**Example: Tier-based support**
+
+```
+Start
+  ↓
+  Custom Tool: Lookup customer tier
+  ↓
+  Set variable: customer_tier ("free", "premium", "enterprise")
+  ↓
+  Custom Tool: Check tier
+     ├─ tier == "free" → Add Script: Basic Support Script
+     ├─ tier == "premium" → Add Script: Premium Support Script  
+     └─ tier == "enterprise" → Transfer to Human: Dedicated Manager
+```
+
+This pattern keeps scripts modular and loads only relevant context.
+
+### Data validation pipeline
+
+Chain multiple validation steps before processing.
+
+**Example: Email verification**
+
+```
+AI Response: "What's your email address?"
+  ↓
+User Query: [email]
+  ↓
+Custom Tool: Extract email from speech
+  ↓
+Set variable: user_email
+  ↓
+Custom Tool: Validate email format
+  ├─ Valid
+  │   ↓
+  │   Custom Tool: Check if email exists in database
+  │   ├─ Exists → Continue
+  │   └─ Not found → AI: "I can't find that email. Let's try again."
+  │                   ↓
+  │                   Go To Node: "What's your email address?"
+  └─ Invalid → AI: "That doesn't look like a valid email."
+               ↓
+               Go To Node: "What's your email address?"
+```
+
+## Template logic
+
+Use Scriban templates in AI Response nodes for dynamic content generation.
+
+### Conditional messages
+
+```scriban
+{{ if variables.customer_authenticated }}
+  Welcome back, {{ variables.customer_name }}! Your balance is ${{ variables.account_balance }}.
+{{ else }}
+  Welcome! Please authenticate to access your account.
+{{ end }}
+```
+
+### Loops in templates
+
+```scriban
+Your recent transactions are:
+{{ for transaction in variables.recent_transactions }}
+  - {{ transaction.date }}: {{ transaction.description }} - ${{ transaction.amount }}
+{{ end }}
+```
+
+### Math operations
+
+```scriban
+{{ variables.subtotal = variables.price * variables.quantity }}
+{{ variables.tax = variables.subtotal * 0.08 }}
+{{ variables.total = variables.subtotal + variables.tax }}
+
+Your total is ${{ variables.total | math.format '0.00' }}.
+```
+
+<Note>
+Scriban templates execute during the AI Response generation phase, allowing you to compute values before speaking them.
+</Note>
+
+## Best practices
+
+### Separate concerns
+
+<Tabs>
+  <Tab title="Good">
+    ```
+    AI: Natural language interaction
+    Variables: Store extracted data
+    Custom Tools: Validate and process data
+    System Tools: Control flow
+    ```
+    
+    Each layer does what it's best at.
+  </Tab>
+  
+  <Tab title="Bad">
+    ```
+    AI: "Remember the user said their PIN is 1234, then verify it, and if wrong, ask again up to 3 times."
+    ```
+    
+    Never rely on AI memory for critical logic.
+  </Tab>
+</Tabs>
+
+### Use variables for decisions
+
+Don't ask the AI to make business decisions:
+
+<Tabs>
+  <Tab title="Good">
+    ```
+    Custom Tool: Check if account_balance >= withdrawal_amount
+      ├─ True → Process withdrawal
+      └─ False → AI: "Insufficient funds"
+    ```
+  </Tab>
+  
+  <Tab title="Bad">
+    ```
+    AI Response: "Check if the user has enough balance and tell them yes or no."
+    ```
+    
+    AI might hallucinate the balance check result.
+  </Tab>
+</Tabs>
+
+### Handle all edge cases
+
+Every DTMF Input and Custom Tool should have:
+- Success path
+- Failure path
+- Timeout path (if applicable)
+- Maximum retry logic
+
+### Keep loops bounded
+
+Always have an exit condition:
+
+```
+While pin_attempts < max_attempts:
+  Try PIN validation
+  If invalid: increment pin_attempts
+  
+If pin_attempts >= max_attempts:
+  End call (prevent infinite loop)
+```
+
+### Log state transitions
+
+Use variables to track workflow progress:
+
+```
+variables.workflow_stage = "payment_confirmed"
+variables.last_action = "charge_completed"
+variables.timestamp = "2024-03-15T10:30:00Z"
+```
+
+This helps debugging and analytics.
+
+## Advanced patterns
+
+### Saga pattern for distributed workflows
+
+When integrating multiple external systems, implement compensating actions:
+
+```
+1. Reserve inventory (Custom Tool)
+   ↓
+2. Charge payment (Custom Tool)
+   ├─ Success
+   │   ↓
+   │   3. Confirm order (Custom Tool)
+   │   ↓
+   │   4. Send confirmation SMS
+   └─ Failure
+       ↓
+       Compensate: Release inventory reservation
+       ↓
+       AI: "Payment failed. Please try again."
+```
+
+### Rate limiting
+
+Track API call counts to avoid exceeding limits:
+
+```
+variables.api_calls_today = 0
+variables.api_limit = 100
+
+Before Custom Tool call:
+  If api_calls_today >= api_limit:
+    AI: "We're experiencing high volume. Please try again later."
+  Else:
+    Execute Custom Tool
+    Increment api_calls_today
+```
+
+### A/B testing flows
+
+Randomly route users to different experiences:
+
+```
+Custom Tool: Generate random number (0-1)
+  ├─ < 0.5 → Variant A: Traditional menu
+  └─ >= 0.5 → Variant B: AI-guided navigation
+```
+
+Track completion rates in variables for analysis.
+
+## Debugging flows
+
+### Use descriptive variable names
+
+```
+✓ Good: customer_authenticated, pin_attempts, last_validation_result
+✗ Bad: flag1, counter, temp
+```
+
+### Add checkpoint nodes
+
+Insert AI Response nodes that speak variable values during testing:
+
+```
+AI Response (Debug): "Debug: attempts is {{ variables.pin_attempts }}, max is {{ variables.max_attempts }}"
+```
+
+Remove these before production.
+
+### Log to variables
+
+Create a `debug_log` variable and append to it:
+
+```scriban
+{{ variables.debug_log = variables.debug_log + " | Validated PIN at " + date.now }}
+```
+
+## Performance considerations
+
+### Minimize tool calls
+
+Batch operations when possible:
+
+<Tabs>
+  <Tab title="Optimized">
+    ```
+    Custom Tool: Validate and lookup customer (one API call)
+      - Returns: { valid: true, name: "John", balance: 500 }
+    ```
+  </Tab>
+  
+  <Tab title="Slow">
+    ```
+    Custom Tool: Validate customer
+    Custom Tool: Get customer name
+    Custom Tool: Get customer balance
+    (Three API calls)
+    ```
+  </Tab>
+</Tabs>
+
+### Cache computed values
+
+Don't recalculate in templates:
+
+```scriban
+{{ # Do this once }}
+{{ variables.total = variables.price * variables.quantity }}
+
+{{ # Reference multiple times }}
+Your total is ${{ variables.total }}.
+With tax, that's ${{ variables.total * 1.08 }}.
+```
+
+### Lazy-load scripts
+
+Only add scripts when needed:
+
+```
+If user mentions "FAQ":
+  Add Script: FAQ Script (load on-demand)
+Else:
+  Continue without loading (save memory)
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Script nodes" href="/building/script-nodes" icon="diagram-project">
+    Learn about all available node types
+  </Card>
+  
+  <Card title="Secure sessions" href="/building/secure-sessions" icon="lock">
+    PCI-DSS compliant data collection
+  </Card>
+  
+  <Card title="Custom tools" href="/building/custom-tools" icon="wrench">
+    Integrate your backend APIs
+  </Card>
+</CardGroup>

@@ -1,0 +1,417 @@
+---
+title: TTS provider integrations
+description: Configure text-to-speech providers for natural voice synthesis across 18+ services
+---
+
+Iqra AI supports 18 text-to-speech (TTS) providers through the `ITTSService` interface. All providers deliver audio in real-time streaming formats optimized for telephony and WebRTC channels.
+
+## Supported providers
+
+The platform includes native integrations for:
+
+<CardGroup cols={3}>
+  <Card title="ElevenLabs" icon="volume">
+    Industry-leading voice cloning and multilingual synthesis
+  </Card>
+  <Card title="Azure Speech" icon="microsoft">
+    Microsoft's neural TTS with 400+ voices
+  </Card>
+  <Card title="Deepgram" icon="waveform">
+    Ultra-low latency streaming TTS
+  </Card>
+  <Card title="Cartesia" icon="message">
+    Expressive conversational voices
+  </Card>
+  <Card title="Google TTS" icon="google">
+    WaveNet and Neural2 voices
+  </Card>
+  <Card title="FishAudio" icon="fish">
+    High-quality voice synthesis
+  </Card>
+  <Card title="Minimax" icon="star">
+    Advanced Chinese language support
+  </Card>
+  <Card title="HumeAI" icon="face-smile">
+    Emotionally intelligent speech
+  </Card>
+  <Card title="Inworld" icon="gamepad">
+    Character voices for gaming
+  </Card>
+  <Card title="Speechify" icon="book-open">
+    Natural reading voices
+  </Card>
+  <Card title="MurfAI" icon="microphone">
+    Studio-quality voiceovers
+  </Card>
+  <Card title="Neuphonic" icon="brain">
+    Neural voice generation
+  </Card>
+  <Card title="ResembleAI" icon="clone">
+    Real-time voice cloning
+  </Card>
+  <Card title="Rime" icon="music">
+    Expressive speech synthesis
+  </Card>
+  <Card title="Sarvam" icon="globe">
+    Indic language specialist
+  </Card>
+  <Card title="UpliftAI" icon="arrow-up">
+    Enterprise TTS platform
+  </Card>
+  <Card title="HamsaAI" icon="dove">
+    Arabic language optimization
+  </Card>
+  <Card title="Zyphra Zonos" icon="bolt">
+    Fast multilingual synthesis
+  </Card>
+</CardGroup>
+
+## Popular provider configurations
+
+<Tabs>
+  <Tab title="ElevenLabs">
+    ### ElevenLabs Text to Speech
+
+    **Provider ID:** `ElevenLabsTextToSpeech`  
+    **Implementation:** `ElevenLabsTTSService.cs`
+
+    Industry-leading voice cloning with support for 30+ languages and ultra-realistic prosody.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | ElevenLabs API key from elevenlabs.io |
+    | `voiceId` | text | Yes | Voice identifier (e.g., `21m00Tcm4TlvDq8ikWAM`) |
+    | `modelId` | select | No | Model: `eleven_multilingual_v2`, `eleven_turbo_v2_5` |
+    | `stability` | number | No | Voice consistency (0.0-1.0, default: 0.5) |
+    | `similarityBoost` | number | No | Voice clarity (0.0-1.0, default: 0.75) |
+    | `style` | number | No | Exaggeration level (0.0-1.0) |
+    | `useSpeakerBoost` | boolean | No | Enhance clarity (recommended: true) |
+    | `speed` | number | No | Playback speed (0.5-2.0) |
+    | `pronunciationDictionaryIds` | array | No | Custom pronunciation dictionaries |
+    | `applyTextNormalization` | select | No | `auto`, `on`, or `off` |
+
+    #### Recommended settings for voice calls
+
+    ```json
+    {
+      "voiceId": "21m00Tcm4TlvDq8ikWAM",
+      "modelId": "eleven_turbo_v2_5",
+      "stability": 0.5,
+      "similarityBoost": 0.8,
+      "useSpeakerBoost": true,
+      "speed": 1.0,
+      "applyTextNormalization": "auto"
+    }
+    ```
+
+    <Note>
+    Use `eleven_turbo_v2_5` for real-time conversations (lowest latency) and `eleven_multilingual_v2` for maximum voice quality in non-English languages.
+    </Note>
+
+    #### Finding voice IDs
+
+    1. Go to https://elevenlabs.io/voice-library
+    2. Select a voice or clone your own
+    3. Copy the voice ID from the URL or API settings
+
+    #### Pronunciation dictionaries
+
+    Create custom dictionaries in the ElevenLabs dashboard to handle:
+
+    - Brand names and acronyms
+    - Technical terminology
+    - Non-standard pronunciations
+    - Regional variations
+
+    Add dictionary IDs to the `pronunciationDictionaryIds` array.
+  </Tab>
+
+  <Tab title="Azure Speech">
+    ### Azure Speech Services
+
+    **Provider ID:** `AzureSpeechServices`  
+    **Implementation:** `AzureSpeechTTSService.cs`
+
+    Microsoft's neural TTS with 400+ voices across 140+ languages and dialects.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `subscriptionKey` | password | Yes | Azure Speech resource key |
+    | `region` | text | Yes | Azure region (e.g., `eastus`, `westeurope`) |
+    | `voiceName` | text | Yes | Neural voice name (e.g., `en-US-AriaNeural`) |
+    | `style` | select | No | Speaking style (voice-dependent) |
+    | `styleDegree` | number | No | Style intensity (0.01-2.0) |
+    | `rate` | number | No | Speech rate (-50% to +200%) |
+    | `pitch` | text | No | Pitch adjustment (e.g., `+5Hz`, `-10%`) |
+    | `volume` | number | No | Volume level (0-100) |
+
+    #### Recommended settings
+
+    ```json
+    {
+      "region": "eastus",
+      "voiceName": "en-US-AriaNeural",
+      "style": "friendly",
+      "styleDegree": 1.0,
+      "rate": 0,
+      "volume": 100
+    }
+    ```
+
+    #### Available speaking styles
+
+    Styles vary by voice. Common options include:
+
+    - **General**: `friendly`, `cheerful`, `empathetic`, `calm`
+    - **Professional**: `customerservice`, `newscast`, `assistant`
+    - **Expressive**: `excited`, `angry`, `sad`, `terrified`
+
+    See [Azure documentation](https://learn.microsoft.com/en-us/azure/ai-services/speech-service/language-support) for voice-specific styles.
+
+    <Warning>
+    Azure has region-specific voice availability. Ensure your selected voice is available in your deployment region.
+    </Warning>
+
+    #### Multi-language support
+
+    Azure excels at non-English languages:
+
+    - **Arabic**: `ar-SA-ZariyahNeural`, `ar-EG-SalmaNeural`
+    - **Chinese**: `zh-CN-XiaoxiaoNeural`, `zh-TW-HsiaoChenNeural`
+    - **Hindi**: `hi-IN-SwaraNeural`
+    - **Spanish**: `es-MX-DaliaNeural`, `es-ES-ElviraNeural`
+  </Tab>
+
+  <Tab title="Deepgram">
+    ### Deepgram Text to Speech
+
+    **Provider ID:** `DeepgramTextToSpeech`  
+    **Implementation:** `DeepgramTextToSpeech.cs`
+
+    Ultra-low latency streaming TTS optimized for real-time conversations.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Deepgram API key from console.deepgram.com |
+    | `model` | select | Yes | Voice model (e.g., `aura-asteria-en`) |
+    | `encoding` | select | No | Audio format: `linear16`, `mulaw`, `alaw` |
+    | `sampleRate` | number | No | Sample rate in Hz (8000, 16000, 24000) |
+    | `bitrate` | number | No | Bitrate for compressed formats |
+
+    #### Recommended settings for telephony
+
+    ```json
+    {
+      "model": "aura-asteria-en",
+      "encoding": "mulaw",
+      "sampleRate": 8000
+    }
+    ```
+
+    #### Available Aura voices
+
+    - **aura-asteria-en** - Friendly female (US)
+    - **aura-luna-en** - Calm female (US)
+    - **aura-stella-en** - Professional female (US)
+    - **aura-athena-en** - Confident female (UK)
+    - **aura-hera-en** - Warm female (US)
+    - **aura-orion-en** - Professional male (US)
+    - **aura-arcas-en** - Friendly male (US)
+    - **aura-perseus-en** - Confident male (US)
+    - **aura-angus-en** - Authoritative male (Ireland)
+    - **aura-orpheus-en** - Expressive male (US)
+
+    <Note>
+    Deepgram typically delivers first audio chunk in under 250ms, making it ideal for voice applications where response time is critical.
+    </Note>
+  </Tab>
+
+  <Tab title="Cartesia">
+    ### Cartesia Text to Speech
+
+    **Provider ID:** `CartesiaTextToSpeech`  
+    **Implementation:** `CartesiaTTSService.cs`
+
+    Expressive conversational voices designed for dialogue-heavy applications.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Cartesia API key from cartesia.ai |
+    | `voiceId` | text | Yes | Voice identifier |
+    | `model` | select | No | Model version |
+    | `language` | text | No | Language code (e.g., `en`, `es`) |
+    | `sampleRate` | number | No | Audio sample rate |
+
+    #### Example configuration
+
+    ```json
+    {
+      "voiceId": "default-voice-id",
+      "model": "sonic",
+      "language": "en",
+      "sampleRate": 24000
+    }
+    ```
+  </Tab>
+
+  <Tab title="Google Cloud">
+    ### Google Cloud Text to Speech
+
+    **Provider ID:** `GoogleCloudTextToSpeech`  
+    **Implementation:** `GoogleTTSService.cs`
+
+    Google's WaveNet and Neural2 voices with support for 220+ voices.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `credentialsJson` | password | Yes | Service account JSON key |
+    | `voiceName` | text | Yes | Voice name (e.g., `en-US-Neural2-A`) |
+    | `languageCode` | text | Yes | Language (e.g., `en-US`) |
+    | `speakingRate` | number | No | Speed (0.25-4.0) |
+    | `pitch` | number | No | Pitch (-20.0 to 20.0) |
+    | `volumeGainDb` | number | No | Volume in decibels |
+
+    #### Voice types
+
+    - **Standard** - Basic synthesis
+    - **WaveNet** - High-quality neural synthesis
+    - **Neural2** - Latest generation (recommended)
+    - **Studio** - Premium studio quality
+    - **News** - Optimized for news reading
+    - **Polyglot** - Multilingual voices
+
+    #### Example configuration
+
+    ```json
+    {
+      "voiceName": "en-US-Neural2-F",
+      "languageCode": "en-US",
+      "speakingRate": 1.0,
+      "pitch": 0.0
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Implementation details
+
+### Interface contract
+
+```csharp
+public interface ITTSService
+{
+    Task<FunctionReturnResult> Initialize();
+    Task<FunctionReturnResult<byte[]>> TextToSpeechAsync(string text, 
+                                                          CancellationToken cancellationToken);
+    Task<FunctionReturnResult<Stream>> TextToSpeechStreamAsync(string text, 
+                                                                CancellationToken cancellationToken);
+}
+```
+
+### Audio format handling
+
+Iqra AI automatically handles format conversion:
+
+1. **Provider native format** - Each TTS service outputs in its preferred format
+2. **Format detection** - System identifies optimal format (PCM, μ-law, Opus, etc.)
+3. **Automatic conversion** - Converts to telephony format (8kHz μ-law) or WebRTC (16kHz Opus)
+4. **Streaming delivery** - Chunks audio for minimal latency
+
+See `TTSProviderManager.cs:1-50` for implementation.
+
+### Caching system
+
+The `TTSAudioCacheManager` optimizes repeated phrases:
+
+- **Cache key generation** - Hash of text + voice + config
+- **S3 storage** - Persistent cache in RustFS
+- **TTL management** - Configurable expiration
+- **Cache invalidation** - Automatic on config changes
+
+This dramatically reduces latency and costs for common responses.
+
+## Provider selection guide
+
+<Tabs>
+  <Tab title="Lowest latency">
+    **Recommended providers:**
+
+    1. **Deepgram** - Sub-250ms first chunk
+    2. **ElevenLabs Turbo** - ~300ms latency
+    3. **Cartesia** - Optimized for streaming
+
+    Use μ-law encoding at 8kHz for telephony.
+  </Tab>
+
+  <Tab title="Best quality">
+    **Recommended providers:**
+
+    1. **ElevenLabs Multilingual v2** - Most realistic
+    2. **Azure Neural** - Excellent prosody
+    3. **Google WaveNet/Neural2** - Natural speech
+
+    Accept higher latency for maximum quality.
+  </Tab>
+
+  <Tab title="Multi-language">
+    **Recommended providers:**
+
+    1. **Azure Speech** - 140+ languages
+    2. **ElevenLabs** - 30+ languages with cloning
+    3. **Google Cloud** - 220+ voices, 40+ languages
+
+    Specialized:
+    - **Arabic** - HamsaAI, Azure
+    - **Chinese** - Minimax, Azure
+    - **Indic** - Sarvam, Google
+  </Tab>
+
+  <Tab title="Cost-optimized">
+    **Recommended providers:**
+
+    1. **Azure Speech** - Competitive pricing, free tier
+    2. **Google Cloud Standard** - Lower cost than Neural2
+    3. **Deepgram** - Simple per-character pricing
+
+    Monitor usage via provider dashboards.
+  </Tab>
+</Tabs>
+
+## Adding custom providers
+
+To integrate a new TTS provider:
+
+1. **Add enum value** in `IqraCore/Entities/Interfaces/InterfaceTTSProviderEnum.cs`
+2. **Implement interface** in `IqraInfrastructure/Managers/TTS/Providers/`
+3. **Handle audio formats** using `TTSProviderAvailableAudioFormat`
+4. **Return streaming data** via `Stream` or `byte[]`
+5. **Restart application** for auto-registration
+
+See `ElevenLabsTTSService.cs:19-71` for reference implementation.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure STT" href="/integrations/stt-providers">
+    Add speech-to-text for input processing
+  </Card>
+  <Card title="Multi-language agents" href="/build/multi-language">
+    Configure parallel language contexts
+  </Card>
+  <Card title="Voice settings" href="/build/agents/voice-config">
+    Fine-tune voice parameters per agent
+  </Card>
+  <Card title="Telephony integration" href="/integrations/telephony">
+    Deploy via phone providers
+  </Card>
+</CardGroup>

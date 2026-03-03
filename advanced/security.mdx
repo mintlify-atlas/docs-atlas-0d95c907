@@ -1,0 +1,599 @@
+---
+title: Security best practices
+description: Secure your Iqra AI deployment and maintain compliance with industry standards
+---
+
+## Overview
+
+Security is a core value at Iqra AI, viewed as an **Amanah** (Trust) between the platform and its users. This guide covers security best practices for self-hosted deployments, helping you protect user data, maintain compliance, and prevent security incidents.
+
+<Warning>
+While the Iqra AI codebase is secure by design, proper deployment and configuration are your responsibility. Security failures typically occur due to misconfiguration, not code vulnerabilities.
+</Warning>
+
+## Security principles
+
+Iqra AI follows these security principles:
+
+1. **Defense in depth** - Multiple layers of security controls
+2. **Least privilege** - Minimum permissions required for operation
+3. **Secure by default** - New resources start in the most secure state
+4. **Transparency** - Clear security policies and incident response
+
+## Network security
+
+### Firewall configuration
+
+Only expose necessary ports to the public internet:
+
+<Steps>
+  <Step title="Allow HTTP/HTTPS">
+    Ports 80 and 443 for web traffic:
+
+    ```bash
+    # UFW (Ubuntu)
+    sudo ufw allow 80/tcp
+    sudo ufw allow 443/tcp
+
+    # iptables
+    sudo iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+    sudo iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+    ```
+  </Step>
+
+  <Step title="Allow RTP for voice">
+    UDP ports 10000-20000 for real-time audio:
+
+    ```bash
+    # UFW
+    sudo ufw allow 10000:20000/udp
+
+    # iptables
+    sudo iptables -A INPUT -p udp --dport 10000:20000 -j ACCEPT
+    ```
+  </Step>
+
+  <Step title="Block database ports">
+    Ensure MongoDB and Redis are NOT accessible publicly:
+
+    ```bash
+    # Explicitly deny external access
+    sudo ufw deny 27017/tcp  # MongoDB
+    sudo ufw deny 6379/tcp   # Redis
+    ```
+  </Step>
+
+  <Step title="Enable firewall">
+    ```bash
+    sudo ufw enable
+    sudo ufw status verbose
+    ```
+  </Step>
+</Steps>
+
+<Note>
+These firewall rules are documented in the Security Policy at `SECURITY.md:58`.
+</Note>
+
+### Internal network isolation
+
+Use Docker networks or VPCs to isolate services:
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true  # No external access
+
+services:
+  iqra-proxy:
+    networks:
+      - frontend
+      - backend
+
+  iqra-backend:
+    networks:
+      - backend
+
+  mongodb:
+    networks:
+      - backend  # Only accessible from backend network
+
+  redis:
+    networks:
+      - backend
+```
+
+This ensures databases are only accessible from application containers.
+
+### TLS/SSL configuration
+
+<Warning>
+HTTPS is mandatory. WebRTC and browser microphone access will fail over insecure HTTP connections.
+</Warning>
+
+Use a reverse proxy with valid SSL certificates:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name app.yourdomain.com;
+
+    # TLS configuration
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # HSTS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    # Proxy to Iqra AI
+    location / {
+        proxy_pass http://localhost:5000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name app.yourdomain.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+## Authentication and authorization
+
+### Change default credentials
+
+<Warning>
+This is the most critical security step. Failure to change default credentials is the #1 cause of security breaches in self-hosted deployments.
+</Warning>
+
+Immediately change the default admin credentials:
+
+```json
+// appsettings.json (before first deployment)
+{
+  "DefaultAdmin": {
+    "Email": "admin@yourdomain.com",
+    "Password": "generate-strong-random-password-here"
+  }
+}
+```
+
+Generate a strong password:
+
+```bash
+# Linux/macOS
+openssl rand -base64 32
+
+# PowerShell
+[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
+```
+
+### API secret tokens
+
+Generate cryptographically secure API keys for internal service communication:
+
+```bash
+# Generate 64-character API key
+openssl rand -hex 32
+```
+
+Configure in environment variables or secrets management:
+
+```bash
+export IQRA_API_SECRET_TOKEN="your-generated-secret-here"
+```
+
+<Tip>
+Rotate API keys quarterly and whenever an employee with access leaves the organization.
+</Tip>
+
+### Server API keys
+
+Each regional server requires a unique API key (minimum 32 characters):
+
+```csharp
+public static string GenerateSecureApiKey(int length = 64)
+{
+    using var rng = RandomNumberGenerator.Create();
+    var bytes = new byte[length];
+    rng.GetBytes(bytes);
+    return Convert.ToBase64String(bytes).Substring(0, length);
+}
+
+var serverConfig = new CreateUpdateServerRequestModel {
+    Endpoint = "backend-us-east-1.yourdomain.com",
+    APIKey = GenerateSecureApiKey(),
+    // ... other config
+};
+```
+
+<Warning>
+Never reuse API keys across servers or regions. Each server must have a unique key as documented in `RegionManager.cs:297`.
+</Warning>
+
+## Data protection
+
+### Encryption at rest
+
+Encrypt sensitive data stored in MongoDB:
+
+<Steps>
+  <Step title="Enable MongoDB encryption">
+    Configure MongoDB with encryption at rest:
+
+    ```yaml
+    # mongod.conf
+    security:
+      enableEncryption: true
+      encryptionKeyFile: /etc/mongodb/keyfile
+    ```
+  </Step>
+
+  <Step title="Generate encryption key">
+    ```bash
+    openssl rand -base64 32 > /etc/mongodb/keyfile
+    chmod 600 /etc/mongodb/keyfile
+    chown mongodb:mongodb /etc/mongodb/keyfile
+    ```
+  </Step>
+
+  <Step title="Restart MongoDB">
+    ```bash
+    sudo systemctl restart mongod
+    ```
+  </Step>
+</Steps>
+
+### Encryption in transit
+
+All network communication should use TLS:
+
+- **Frontend ↔ Backend**: HTTPS (enforced by reverse proxy)
+- **Backend ↔ MongoDB**: MongoDB TLS connection
+- **Backend ↔ Redis**: Redis TLS/SSL mode
+- **Backend ↔ LLM APIs**: HTTPS (built into integrations)
+
+### Secure sessions (PCI-DSS compliance)
+
+Iqra AI includes a Secure Sessions feature for handling sensitive data like credit card numbers:
+
+<Accordion title="How secure sessions work">
+  The Secure Sessions system creates a "clean room" for sensitive data:
+
+  1. Conversation enters secure mode via script action
+  2. Audio/DTMF input is processed by deterministic engine only
+  3. AI receives validation results, never raw sensitive data
+  4. Data is masked in logs and recordings
+  5. Session exits secure mode after data collection
+
+  This ensures compliance with PCI-DSS and other data privacy standards.
+</Accordion>
+
+Implement secure sessions for:
+- Payment card information
+- Social security numbers
+- Health information (PHI)
+- Any regulated data
+
+See the [Secure Sessions documentation](https://docs.iqra.bot/building/visual-ide/secure-sessions) for implementation details.
+
+## Access control
+
+### Principle of least privilege
+
+Grant minimum necessary permissions:
+
+**MongoDB user permissions:**
+
+```javascript
+// Create application user with limited permissions
+use iqra
+db.createUser({
+  user: "iqra_app",
+  pwd: "strong-password-here",
+  roles: [
+    { role: "readWrite", db: "iqra" }
+  ]
+})
+
+// Do NOT use the admin user for application access
+```
+
+**Redis ACL:**
+
+```bash
+# Redis 6+ ACL
+ACL SETUSER iqra_app on >strong-password ~iqra:* +@all
+```
+
+### SSH hardening
+
+Secure SSH access to servers:
+
+```bash
+# /etc/ssh/sshd_config
+PermitRootLogin no
+PasswordAuthentication no
+PubkeyAuthentication yes
+Port 2222  # Use non-standard port
+
+# Restart SSH
+sudo systemctl restart sshd
+```
+
+Use SSH keys instead of passwords:
+
+```bash
+# Generate SSH key pair
+ssh-keygen -t ed25519 -C "your-email@example.com"
+
+# Copy to server
+ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 2222 user@server
+```
+
+## Compliance
+
+### Data residency
+
+For deployments requiring data to remain in specific jurisdictions:
+
+<Steps>
+  <Step title="Deploy region in required country">
+    Create a region in the country with data residency requirements:
+
+    ```csharp
+    await regionManager.CreateRegion("SA", "CENTRAL"); // Saudi Arabia
+    ```
+  </Step>
+
+  <Step title="Configure regional S3">
+    Use object storage physically located in that country:
+
+    ```csharp
+    var s3Config = new RegionS3StorageServerData {
+        Endpoint = "s3.me-south-1.amazonaws.com", // Bahrain region
+        // ... config
+    };
+    ```
+  </Step>
+
+  <Step title="Pin organization to region">
+    Configure organization settings to ensure data never leaves the region.
+  </Step>
+</Steps>
+
+<Note>
+Iqra AI Enterprise supports dedicated infrastructure for GCC nations and other regions with strict data residency requirements. Contact sales for details.
+</Note>
+
+### GDPR compliance
+
+For European deployments:
+
+1. **Data minimization**: Only collect necessary conversation data
+2. **Right to erasure**: Implement data deletion workflows
+3. **Data portability**: Provide export functionality for user data
+4. **Consent management**: Track user consent for data processing
+5. **Privacy by design**: Enable secure sessions for sensitive data
+
+### Audit logging
+
+Maintain audit logs for compliance:
+
+```csharp
+public class AuditLogger
+{
+    public void LogSecurityEvent(
+        string eventType,
+        string userId,
+        string resource,
+        string action,
+        bool success,
+        string details = null)
+    {
+        var auditEntry = new AuditLogEntry
+        {
+            Timestamp = DateTime.UtcNow,
+            EventType = eventType,
+            UserId = userId,
+            Resource = resource,
+            Action = action,
+            Success = success,
+            Details = details,
+            IpAddress = GetClientIpAddress()
+        };
+
+        // Write to secure audit log (append-only)
+        _auditLogRepository.Insert(auditEntry);
+    }
+}
+
+// Usage
+auditLogger.LogSecurityEvent(
+    "AUTHENTICATION",
+    userId: "user@example.com",
+    resource: "Admin Dashboard",
+    action: "LOGIN",
+    success: true
+);
+```
+
+Store audit logs separately from application data and retain for compliance periods (typically 1-7 years).
+
+## Vulnerability management
+
+### Reporting vulnerabilities
+
+If you discover a security vulnerability:
+
+<Warning>
+DO NOT report security vulnerabilities via GitHub Issues. This could expose your deployment and others to risk.
+</Warning>
+
+<Steps>
+  <Step title="Email security team">
+    Send details to **security@iqra.bot**
+  </Step>
+
+  <Step title="Include required information">
+    - Type of issue (XSS, Injection, RCE, etc.)
+    - Proof of concept or reproduction steps
+    - Impact assessment
+  </Step>
+
+  <Step title="Wait for acknowledgment">
+    You'll receive acknowledgment within 48 hours
+  </Step>
+
+  <Step title="Maintain confidentiality">
+    Do not disclose publicly until a fix is released
+  </Step>
+</Steps>
+
+Full details in the [Security Policy](https://github.com/abdofallah/IqraAI/blob/master/SECURITY.md).
+
+### Supported versions
+
+| Version | Supported |
+|---------|----------|
+| Latest  | ✅ Always run the latest stable release or `main` branch |
+| < 1.0   | ❌ No security patches for pre-release versions |
+
+### Update policy
+
+Stay current with security updates:
+
+1. **Monitor releases**: Watch the GitHub repository for security releases
+2. **Test updates**: Validate in staging environment first
+3. **Apply promptly**: Deploy security patches within 7 days
+4. **Document changes**: Maintain change log for compliance audits
+
+## Incident response
+
+### Incident response plan
+
+Prepare for security incidents before they occur:
+
+<Steps>
+  <Step title="Detection">
+    Monitor for security events:
+    - Failed authentication attempts
+    - Unusual access patterns
+    - System resource anomalies
+    - Database connection from unexpected IPs
+  </Step>
+
+  <Step title="Containment">
+    Immediate actions:
+    - Isolate affected systems
+    - Revoke compromised credentials
+    - Enable maintenance mode if needed
+  </Step>
+
+  <Step title="Investigation">
+    Analyze the incident:
+    - Review audit logs
+    - Check system logs
+    - Identify attack vector
+    - Assess scope of compromise
+  </Step>
+
+  <Step title="Remediation">
+    Fix the vulnerability:
+    - Apply security patches
+    - Update configurations
+    - Rotate credentials
+  </Step>
+
+  <Step title="Recovery">
+    Restore normal operations:
+    - Validate all systems are secure
+    - Re-enable disabled services
+    - Monitor for recurrence
+  </Step>
+
+  <Step title="Post-incident review">
+    Learn and improve:
+    - Document timeline
+    - Identify root cause
+    - Update security procedures
+  </Step>
+</Steps>
+
+### Data breach notification
+
+If a data breach affects user data:
+
+1. **Assess impact**: Determine what data was exposed
+2. **Notify users**: Within 72 hours per GDPR requirements
+3. **Notify authorities**: If required by local regulations
+4. **Provide support**: Offer credit monitoring or other remediation
+5. **Document incident**: Create detailed post-mortem
+
+<Note>
+Iqra Cloud (SaaS) follows the same process, as documented in `SECURITY.md:65`.
+</Note>
+
+## Security checklist
+
+Before going to production:
+
+- [ ] Changed default admin credentials
+- [ ] Generated unique API keys for all servers (≥32 chars)
+- [ ] Configured firewall (allow 80/443/10000-20000, block 27017/6379)
+- [ ] Enabled HTTPS with valid SSL certificates
+- [ ] Configured MongoDB authentication and encryption
+- [ ] Configured Redis authentication
+- [ ] Isolated databases on internal network only
+- [ ] Disabled password-based SSH authentication
+- [ ] Implemented audit logging
+- [ ] Documented incident response plan
+- [ ] Set up security monitoring and alerts
+- [ ] Reviewed and tested backup/recovery procedures
+
+## Best practices summary
+
+### Do's
+
+1. **Change all defaults** - Never use default passwords or keys
+2. **Use strong encryption** - TLS for transit, encryption for rest
+3. **Apply least privilege** - Minimum permissions required
+4. **Monitor continuously** - Log and alert on security events
+5. **Update regularly** - Apply security patches promptly
+6. **Test backups** - Verify recovery procedures work
+
+### Don'ts
+
+1. **Don't expose databases** - MongoDB and Redis must be internal only
+2. **Don't reuse credentials** - Unique keys per server/region
+3. **Don't skip HTTPS** - Required for WebRTC functionality
+4. **Don't ignore alerts** - Investigate all security events
+5. **Don't report publicly** - Use security@iqra.bot for vulnerabilities
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Multi-region" icon="globe" href="/advanced/multi-region">
+    Deploy secure infrastructure across multiple regions
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/advanced/monitoring">
+    Set up security monitoring and alerting
+  </Card>
+</CardGroup>

@@ -1,0 +1,457 @@
+---
+title: SIP trunking deployment
+description: Deploy Iqra AI with SIP trunk providers like Twilio, Telnyx, and Vonage for enterprise telephony integration
+---
+
+## Overview
+
+Iqra AI supports SIP trunking for enterprise-grade telephony deployment. Connect your existing phone infrastructure or use cloud telephony providers to route calls through Iqra AI's conversational agents.
+
+The platform implements a two-tier SIP architecture:
+- **Proxy layer** - Load balances incoming SIP INVITE requests across backend servers
+- **Backend layer** - Handles media processing and AI conversation orchestration
+
+## Supported providers
+
+Iqra AI integrates with multiple telephony providers:
+
+<Tabs>
+  <Tab title="Twilio">
+    ### Twilio configuration
+
+    Twilio uses TwiML and WebSocket streaming for real-time audio.
+
+    **Authentication**: Basic auth with Account SID and Auth Token
+
+    **Key features**:
+    - Voice URL webhook configuration
+    - Status callback for call lifecycle events
+    - Media streaming via WebSocket
+    - Support for both inbound and outbound calls
+
+    **Implementation**: See `IqraInfrastructure/Managers/Telephony/TwilioManager.cs:136`
+
+    ```csharp
+    // Outbound call with WebSocket streaming
+    var voiceResponse = new VoiceResponse();
+    var connect = new Connect();
+    var stream = new Stream(url: websocketUrl);
+    connect.Append(stream);
+    voiceResponse.Append(connect);
+    ```
+
+    <Info>
+    Twilio requires `VoiceReceiveMode` set to "voice" for full-duplex audio streaming.
+    </Info>
+  </Tab>
+
+  <Tab title="Telnyx">
+    ### Telnyx configuration
+
+    Telnyx provides native SIP and WebRTC connectivity with advanced call control.
+
+    **Authentication**: Bearer token (API key)
+
+    **Key features**:
+    - Bidirectional RTP streaming
+    - DTMF tone support
+    - WebRTC and SIP endpoints
+    - Connection-based routing
+
+    **Audio configuration**:
+    - Codec: PCMA (G.711 A-law)
+    - Sample rate: 8000 Hz
+    - Mode: Bidirectional RTP
+    - Tracks: Both inbound and outbound
+
+    **Implementation**: See `IqraInfrastructure/Managers/Telephony/TelnyxManager.cs:40`
+
+    ```csharp
+    var dialRequest = new {
+        StreamUrl = streamUrl,
+        StreamTrack = "both_tracks",
+        StreamCodex = "PCMA",
+        StreamBidirectionalMode = "rtp",
+        StreamBidirectionalSamplingRate = 8000
+    };
+    ```
+  </Tab>
+
+  <Tab title="Vonage">
+    ### Vonage (Nexmo) configuration
+
+    Vonage uses dual authentication and NCCO for call control.
+
+    **Authentication**:
+    - API calls: JWT Bearer token
+    - Number management: Basic auth (API Key + Secret)
+
+    **Key features**:
+    - NCCO (Nexmo Call Control Objects) for call flow
+    - WebSocket endpoint connections
+    - L16 audio format support (16-bit linear PCM)
+    - Event URL callbacks
+
+    **Implementation**: See `IqraInfrastructure/Managers/Telephony/VonageManager.cs:55`
+
+    ```csharp
+    var ncco = new[] {
+        new {
+            Action = "connect",
+            Endpoint = new[] {
+                new {
+                    Type = "websocket",
+                    Uri = websocketUrl,
+                    ContentType = "audio/l16;rate=8000"
+                }
+            }
+        }
+    };
+    ```
+
+    <Info>
+    Vonage requires separate HTTP clients for API operations (api.nexmo.com) vs number management (rest.nexmo.com).
+    </Info>
+  </Tab>
+
+  <Tab title="Direct SIP">
+    ### Direct SIP trunk configuration
+
+    Connect your own SIP infrastructure directly to Iqra AI.
+
+    **Supported protocols**:
+    - UDP (primary)
+    - TCP (fallback)
+    - TLS (for secure connections)
+
+    **Configuration options**:
+    - E.164 number format support
+    - Custom SIP username/password override
+    - IP-based access control lists (ACL)
+
+    **Implementation**: See `IqraInfrastructure/Managers/SIP/SipProxyService.cs:63`
+
+    <Note>
+    Direct SIP numbers support IP whitelisting via the `AllowedSourceIps` configuration.
+    </Note>
+  </Tab>
+</Tabs>
+
+## Architecture
+
+### SIP proxy service
+
+The proxy service handles initial call routing and load balancing:
+
+<Steps>
+  <Step title="Receive SIP INVITE">
+    Proxy listens on configurable port (UDP/TCP) for incoming INVITE requests.
+
+    ```
+    SIPTransport.AddSIPChannel(new SIPUDPChannel(port))
+    SIPTransport.AddSIPChannel(new SIPTCPChannel(port))
+    ```
+  </Step>
+
+  <Step title="Validate business and number">
+    Extract business ID and phone ID from SIP URI parameters:
+
+    ```
+    sip:+15551234567@proxy.example.com?X-Business-Id=123&X-Phone-Id=abc
+    ```
+
+    Validates:
+    - Business exists and is active
+    - Number is configured for the business
+    - Number provider matches (SIP, Twilio, etc.)
+    - Route ID is configured
+  </Step>
+
+  <Step title="Check plan limits">
+    Validates call concurrency limits based on subscription tier before accepting the call.
+  </Step>
+
+  <Step title="Apply ACL rules">
+    For SIP numbers with IP restrictions, validates source IP against `AllowedSourceIps` list.
+  </Step>
+
+  <Step title="Select backend server">
+    Chooses optimal backend server based on:
+    - Region affinity
+    - Current capacity
+    - Admin bypass rules
+  </Step>
+
+  <Step title="Redirect to backend">
+    Returns `302 Moved Temporarily` with Contact header pointing to selected backend:
+
+    ```
+    Contact: <sip:+15551234567@backend.example.com:5060?X-CallQueue-Id=queue123>
+    ```
+  </Step>
+</Steps>
+
+**Source**: `IqraInfrastructure/Managers/SIP/SipProxyService.cs:134`
+
+### SIP backend listener
+
+The backend service handles actual media processing:
+
+<Steps>
+  <Step title="Accept redirected call">
+    Backend listener receives the redirected INVITE with call queue ID parameter.
+  </Step>
+
+  <Step title="Validate queue entry">
+    Retrieves call queue entry and verifies:
+    - Queue exists and is in `ProcessedProxy` state
+    - Region and server ID match
+    - Not already processing
+  </Step>
+
+  <Step title="Create conversation session">
+    Hands off to `BackendCallProcessorManager` to:
+    - Initialize conversation orchestrator
+    - Create AI agent
+    - Setup telephony client
+    - Configure audio pipeline
+  </Step>
+
+  <Step title="Answer call">
+    Sends SIP `200 OK` response with SDP to establish media session.
+  </Step>
+</Steps>
+
+**Source**: `IqraInfrastructure/Managers/SIP/SipBackendListenerService.cs:99`
+
+## Deployment patterns
+
+### Provider-based routing
+
+Route calls through cloud telephony providers:
+
+```mermaid
+graph LR
+    A[PSTN] --> B[Twilio/Telnyx/Vonage]
+    B --> C[Iqra AI Backend]
+    C --> D[AI Agent]
+```
+
+**Use cases**:
+- Quick deployment without infrastructure
+- Global phone number provisioning
+- Built-in redundancy and failover
+
+### Direct SIP trunking
+
+Connect enterprise PBX directly to Iqra AI:
+
+```mermaid
+graph LR
+    A[Enterprise PBX] --> B[SIP Proxy]
+    B --> C[Backend Pool]
+    C --> D[AI Conversation]
+```
+
+**Use cases**:
+- Existing telephony infrastructure
+- Regulatory compliance requirements
+- Cost optimization for high call volumes
+
+### Hybrid deployment
+
+Combine provider and direct SIP:
+
+- Use Twilio for US/Canada numbers
+- Use direct SIP for internal extensions
+- Use Telnyx for international markets
+
+## Configuration
+
+### Number registration
+
+Register phone numbers in the Iqra AI platform:
+
+```json
+{
+  "provider": "SIP",
+  "number": "+15551234567",
+  "routeId": "route-abc123",
+  "regionId": "us-east-1",
+  "isE164Number": true,
+  "allowedSourceIps": [
+    "203.0.113.10",
+    "203.0.113.11"
+  ]
+}
+```
+
+### Provider credentials
+
+Store provider credentials securely:
+
+<Tabs>
+  <Tab title="Twilio">
+    ```json
+    {
+      "accountSid": "ACxxxxxxxxxxxxx",
+      "authToken": "your_auth_token",
+      "voiceUrl": "https://your-backend/webhooks/twilio/voice",
+      "statusCallbackUrl": "https://your-backend/webhooks/twilio/status"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Telnyx">
+    ```json
+    {
+      "apiKey": "KEYxxxxxxxxxxxxx",
+      "connectionId": "conn_xxxxxxxxxxxxx",
+      "webhookUrl": "https://your-backend/webhooks/telnyx"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Vonage">
+    ```json
+    {
+      "apiKey": "abcd1234",
+      "apiSecret": "your_api_secret",
+      "applicationId": "app-xxxxxxxxxxxxx",
+      "privateKey": "-----BEGIN PRIVATE KEY-----\n..."
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Audio codecs
+
+Supported audio formats for SIP:
+
+| Codec | Sample Rate | Description |
+|-------|-------------|-------------|
+| PCMU (μ-law) | 8000 Hz | G.711 mu-law, common in North America |
+| PCMA (A-law) | 8000 Hz | G.711 A-law, common in Europe |
+| G.722 | 16000 Hz | Wideband audio |
+| OPUS | 48000 Hz | Modern codec with WebRTC |
+
+## Call lifecycle
+
+### Inbound call flow
+
+<Steps>
+  <Step title="Call initiated">
+    Customer calls your phone number. Provider sends SIP INVITE or webhook to Iqra AI.
+  </Step>
+
+  <Step title="Proxy routing">
+    SIP proxy validates and routes to available backend server.
+  </Step>
+
+  <Step title="Session creation">
+    Backend creates conversation session with AI agent and telephony client.
+  </Step>
+
+  <Step title="Call answered">
+    SIP 200 OK sent, media session established, AI greeting plays.
+  </Step>
+
+  <Step title="Conversation">
+    Real-time bidirectional audio between customer and AI agent.
+  </Step>
+
+  <Step title="Call termination">
+    Either party hangs up. Session cleanup, billing recorded, webhooks fired.
+  </Step>
+</Steps>
+
+### Outbound call flow
+
+<Steps>
+  <Step title="API trigger">
+    Application calls Iqra AI API to initiate outbound call.
+  </Step>
+
+  <Step title="Provider API call">
+    Backend calls Twilio/Telnyx/Vonage API to dial customer number.
+  </Step>
+
+  <Step title="Call connects">
+    Provider establishes call, sends audio stream to Iqra AI backend.
+  </Step>
+
+  <Step title="AI conversation">
+    Same bidirectional conversation flow as inbound calls.
+  </Step>
+</Steps>
+
+## Monitoring and troubleshooting
+
+### Call queue tracking
+
+Each call creates an entry in the `InboundCallQueue` collection:
+
+```json
+{
+  "id": "queue-123",
+  "status": "ProcessedProxy",
+  "providerCallId": "call-abc",
+  "businessId": 12345,
+  "routeNumberId": "num-xyz",
+  "processingProxyServerId": "proxy-1",
+  "processingBackendServerId": "backend-2",
+  "enqueuedAt": "2024-01-15T10:30:00Z",
+  "logs": [
+    {"type": "Info", "message": "Call routed to backend-2"}
+  ]
+}
+```
+
+### Common issues
+
+<Warning>
+**SIP 503 Service Unavailable**: No backend servers available in the region. Check server health and capacity limits.
+</Warning>
+
+<Warning>
+**SIP 403 Forbidden**: Source IP not in ACL. Add caller IP to `AllowedSourceIps` for the number.
+</Warning>
+
+<Warning>
+**SIP 404 Not Found**: Number or route not configured. Verify number registration and route ID.
+</Warning>
+
+### Status codes
+
+| SIP Code | Description | Common Cause |
+|----------|-------------|---------------|
+| 100 Trying | Processing request | Normal |
+| 200 OK | Call established | Success |
+| 302 Moved Temporarily | Redirecting to backend | Normal proxy operation |
+| 403 Forbidden | ACL rejection | Source IP not whitelisted |
+| 404 Not Found | Number/route missing | Configuration error |
+| 503 Service Unavailable | No capacity | All backends busy |
+
+## Best practices
+
+<Note>
+**Use regional backends**: Deploy backend servers in the same region as your customers to minimize latency.
+</Note>
+
+<Note>
+**Configure failover**: Set up multiple providers for redundancy. If Twilio fails, route to Telnyx.
+</Note>
+
+<Note>
+**Monitor concurrency**: Track `CallConcurrency` metrics to avoid hitting subscription limits during peak hours.
+</Note>
+
+<Note>
+**Secure SIP trunks**: Always use IP whitelisting for direct SIP connections. Consider TLS for encryption.
+</Note>
+
+## Next steps
+
+- [WebRTC integration](/channels/webrtc) - Add browser-based voice calls
+- [WebSocket integration](/channels/websocket) - Custom audio streaming
+- [Voice configuration](/integrations/tts-providers) - Configure AI voice settings

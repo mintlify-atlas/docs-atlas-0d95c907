@@ -1,0 +1,194 @@
+---
+title: System architecture
+description: Understanding Iqra AI's orchestration infrastructure and core design principles
+---
+
+Iqra AI is built as an orchestration infrastructure that bridges the gap between the probabilistic nature of Large Language Models (LLMs) and the reliability requirements of business applications. The architecture prioritizes systematic execution over AI unpredictability.
+
+## Design philosophy
+
+The platform follows a "Bring Your Own Everything" (BYOE) architecture designed for technical scalability and flexibility. This approach allows you to:
+
+- Use your preferred AI models and service providers
+- Deploy on your infrastructure or use managed cloud
+- Customize every layer while maintaining upgrade compatibility
+- Scale horizontally across geographic regions
+
+<Note>
+Unlike standard LLM wrappers, Iqra AI provides a **Deterministic Logic Layer** alongside the probabilistic AI layer, giving you deep control over how conversations flow and execute.
+</Note>
+
+## Core layers
+
+### Orchestration layer
+
+The orchestration layer manages conversation sessions and coordinates between AI decision-making and deterministic execution. It handles:
+
+- **Session management**: Maintains conversation state across channels (voice, web, API)
+- **Context injection**: Dynamically loads business data, scripts, and agent configurations
+- **Turn coordination**: Manages the flow between user input, AI processing, and system responses
+- **Multi-language routing**: Switches between parallel language contexts seamlessly
+
+### Deterministic execution layer
+
+This layer ensures business logic executes predictably, regardless of AI behavior:
+
+- **Script execution**: Processes node-based conversation flows deterministically
+- **Variable management**: Maintains strict typing and visibility controls for data
+- **Tool invocation**: Executes system tools and external integrations with guaranteed behavior
+- **Workflow processing**: Runs conditional logic (if/else), loops, and calculations
+
+### AI intelligence layer
+
+The intelligence layer provides natural language understanding and generation:
+
+- **Model abstraction**: Supports OpenAI, Azure, Anthropic, Gemini, Groq, and custom models
+- **Prompt engineering**: Automatically constructs system prompts from agent configuration
+- **Context management**: Injects relevant business data, scripts, and capabilities
+- **Response generation**: Produces natural, personality-aligned responses
+
+### Integration layer
+
+The integration layer connects to external services and data sources:
+
+- **FlowApps**: Pluggable C#/.NET connectors for third-party APIs
+- **Custom tools**: HTTP-based tool definitions for any API
+- **Knowledge bases**: Vector database integration for RAG (Retrieval Augmented Generation)
+- **Communication channels**: SIP trunking, WebRTC, REST APIs, and webhooks
+
+## Data architecture
+
+### Entity structure
+
+The core business entities follow a hierarchical structure:
+
+```
+Business App
+├── Agents
+│   ├── General (name, description, emoji)
+│   ├── Context (business data references)
+│   ├── Personality (role, capabilities, tone)
+│   ├── Utterances (common phrases)
+│   ├── Interruptions (turn-taking behavior)
+│   ├── Knowledge Base (RAG configuration)
+│   └── Integrations (model providers)
+├── Scripts
+│   ├── Nodes (conversation building blocks)
+│   ├── Edges (flow connections)
+│   └── Variables (state management)
+└── Tools
+    ├── System Tools (built-in capabilities)
+    ├── Custom Tools (HTTP integrations)
+    └── FlowApps (plugin ecosystem)
+```
+
+### Multi-language storage
+
+All user-facing content is stored in multi-language dictionaries using the `[MultiLanguageProperty]` attribute:
+
+```csharp
+[MultiLanguageProperty]
+public Dictionary<string, string> Name { get; set; }
+
+[MultiLanguageProperty]
+public Dictionary<string, List<string>> Tone { get; set; }
+```
+
+This enables native multi-language support where each language has its own complete configuration, not just translations.
+
+<Info>
+When you switch languages, Iqra AI loads a completely different neural configuration, including different personas, examples, and even different AI service providers optimized for that language.
+</Info>
+
+## Infrastructure components
+
+### Required services
+
+The self-hosted deployment requires:
+
+- **.NET 10 Runtime**: Hosts the core engine and API servers
+- **MongoDB**: Stores business entities, conversation logs, and configuration
+- **Redis**: Handles session caching and real-time state management
+- **Milvus**: Provides vector database for knowledge base embeddings
+- **RustFS (S3)**: Stores audio recordings, files, and media assets
+
+### Optional components
+
+- **Iqra Proxy**: WebRTC/WebSocket gateway for browser and mobile apps
+- **Multi-region deployment**: Geographic distribution for latency optimization
+- **Monitoring stack**: Observability and analytics infrastructure
+
+## Deployment models
+
+### Iqra Cloud (SaaS)
+
+Fully managed platform with:
+- Automated scaling and infrastructure management
+- Multi-tenant billing and whitelabeling systems
+- Global edge network deployment
+- Enterprise SLAs and support
+
+[Start Building →](https://app.iqra.bot)
+
+### Self-hosted (open source)
+
+Core engine deployment with:
+- Full agent engine and script builder
+- FlowApp system for integrations
+- Community support and documentation
+- Source-available license
+
+[Read deployment guide →](/deployment/self-hosting)
+
+### Enterprise
+
+Custom deployment for:
+- Dedicated infrastructure and SLAs
+- On-premise installation support
+- Specific compliance requirements
+- Data residency within GCC nations
+
+[Contact sales →](https://www.iqra.bot/contact)
+
+## Security architecture
+
+### Secure sessions
+
+The **Secure Sessions** feature creates a "clean room" for sensitive data:
+
+- Audio and DTMF inputs are processed by the deterministic engine
+- Strict Get/Set variable rules control data access
+- AI never sees raw sensitive data (like credit card numbers)
+- Only validation results are exposed to the AI layer
+
+This architecture ensures PCI-DSS compliance for payment processing and other regulated data handling.
+
+### Data isolation
+
+Each conversation session maintains isolated context:
+
+- Variables scoped to individual sessions
+- Encrypted storage for sensitive fields
+- Audit logging for compliance tracking
+- Role-based access control (RBAC) for team management
+
+<Warning>
+When handling regulated data (PCI, HIPAA, GDPR), always use Secure Sessions and set `IsVisibleToAgent = false` on sensitive variables to prevent AI exposure.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Learn how agents orchestrate conversations with personality and intelligence
+  </Card>
+  <Card title="Scripts" icon="diagram-project" href="/concepts/scripts">
+    Understand the node-based system for building conversation flows
+  </Card>
+  <Card title="Workflows" icon="arrows-split-up-and-left" href="/concepts/workflows">
+    Explore deterministic action flows for business logic
+  </Card>
+  <Card title="Multi-language" icon="language" href="/concepts/multi-language">
+    Discover native multi-language support with parallel contexts
+  </Card>
+</CardGroup>

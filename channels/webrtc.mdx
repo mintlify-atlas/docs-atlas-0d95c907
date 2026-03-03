@@ -1,0 +1,705 @@
+---
+title: WebRTC gateway
+description: Deploy real-time voice conversations in browsers and mobile apps using WebRTC peer-to-peer connections
+---
+
+## Overview
+
+Iqra AI provides a WebRTC gateway for embedding AI voice conversations directly in web browsers and mobile applications. WebRTC enables low-latency, peer-to-peer audio communication without requiring plugins or downloads.
+
+The WebRTC implementation uses:
+- **SIPSorcery** library for WebRTC peer connection management
+- **WebSocket signaling** for SDP/ICE exchange
+- **STUN servers** for NAT traversal
+- **Audio transceivers** for bidirectional media
+
+## Architecture
+
+### Connection flow
+
+```mermaid
+sequenceDiagram
+    participant Client as Browser/App
+    participant WS as WebSocket Server
+    participant BE as Backend
+    participant AI as AI Agent
+
+    Client->>BE: POST /api/websession/initiate
+    BE->>WS: Create session, return WS URL
+    Client->>WS: Connect WebSocket (signaling)
+    Client->>WS: Send SDP Offer
+    WS->>Client: Send SDP Answer
+    Client<-->WS: Exchange ICE candidates
+    Client<-->BE: Establish WebRTC peer connection
+    Client<-->AI: Bidirectional audio streaming
+```
+
+### Dual-transport design
+
+The `WebRtcClientTransport` combines:
+1. **WebSocket channel** - For signaling (SDP, ICE) and text messages
+2. **RTP channel** - For audio media via WebRTC peer connection
+
+**Implementation**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:13`
+
+## Session initialization
+
+<Steps>
+  <Step title="Create web session">
+    Client requests a WebRTC session via API:
+
+    ```javascript
+    const response = await fetch('/api/websession/initiate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessId: 12345,
+        campaignId: 'campaign-abc',
+        transportType: 'WebRTC', // Specify WebRTC
+        audioConfig: {
+          inputCodec: 'OPUS',
+          outputCodec: 'OPUS',
+          sampleRate: 48000
+        }
+      })
+    });
+    const { websocketUrl } = await response.json();
+    ```
+  </Step>
+
+  <Step title="Backend prepares session">
+    Backend creates:
+    - Conversation session orchestrator
+    - AI agent instance
+    - Deferred client transport (waiting for WebSocket)
+    - WebSocket URL with authentication token
+
+    **Source**: `IqraInfrastructure/Managers/WebSession/BackendWebSessionProcessorManager.cs:111`
+  </Step>
+
+  <Step title="Connect WebSocket">
+    Client connects to the provided WebSocket URL:
+
+    ```javascript
+    const ws = new WebSocket(websocketUrl);
+    ws.onopen = () => {
+      console.log('Signaling channel ready');
+    };
+    ```
+
+    Backend validates the session token and activates the transport:
+
+    ```csharp
+    var realWebRtcTransport = new WebRtcClientTransport(
+        webSocket,
+        AudioEncodingType.OPUS,
+        logger,
+        sessionCts.Token
+    );
+    deferredTransport.Activate(realWebRtcTransport);
+    ```
+
+    **Source**: `IqraInfrastructure/Managers/WebSession/BackendWebSessionProcessorManager.cs:280`
+  </Step>
+
+  <Step title="WebRTC negotiation">
+    Client creates peer connection and sends offer to backend via WebSocket.
+  </Step>
+</Steps>
+
+## WebRTC peer connection
+
+### Client-side setup
+
+```javascript
+// 1. Create peer connection
+const config = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+const pc = new RTCPeerConnection(config);
+
+// 2. Add audio track
+const stream = await navigator.mediaDevices.getUserMedia({
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    sampleRate: 48000
+  }
+});
+
+stream.getTracks().forEach(track => {
+  pc.addTrack(track, stream);
+});
+
+// 3. Handle incoming audio
+pc.ontrack = (event) => {
+  const audioElement = new Audio();
+  audioElement.srcObject = event.streams[0];
+  audioElement.play();
+};
+
+// 4. Create and send offer
+const offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
+
+ws.send(JSON.stringify({
+  type: 'offer',
+  sdp: offer.sdp
+}));
+
+// 5. Handle answer from backend
+ws.onmessage = async (event) => {
+  const msg = JSON.parse(event.data);
+  
+  if (msg.type === 'answer') {
+    await pc.setRemoteDescription({
+      type: 'answer',
+      sdp: msg.sdp
+    });
+  } else if (msg.type === 'candidate') {
+    await pc.addIceCandidate(msg.candidate);
+  }
+};
+
+// 6. Send ICE candidates to backend
+pc.onicecandidate = (event) => {
+  if (event.candidate) {
+    ws.send(JSON.stringify({
+      type: 'candidate',
+      candidate: event.candidate
+    }));
+  }
+};
+```
+
+### Backend implementation
+
+The backend uses **SIPSorcery** to handle WebRTC:
+
+```csharp
+// Create peer connection with STUN server
+var pcConfig = new RTCConfiguration {
+    iceServers = new List<RTCIceServer> { 
+        new RTCIceServer { 
+            urls = "stun:stun.l.google.com:19302" 
+        } 
+    }
+};
+var peerConnection = new RTCPeerConnection(pcConfig);
+
+// Add audio track with supported codec
+var audioFormat = new AudioFormat(AudioCodecsEnum.OPUS, 111, 48000, 2, 
+    "minptime=10;useinbandfec=1");
+var track = new MediaStreamTrack(
+    SDPMediaTypesEnum.audio, 
+    false, 
+    new List<SDPAudioVideoMediaFormat> { 
+        new SDPAudioVideoMediaFormat(audioFormat) 
+    }
+);
+peerConnection.addTrack(track);
+
+// Handle RTP packets (incoming audio)
+peerConnection.OnRtpPacketReceived += (ep, media, pkt) => {
+    if (media == SDPMediaTypesEnum.audio) {
+        // Pass encoded audio to AI agent
+        BinaryMessageReceived?.Invoke(this, pkt.Payload);
+    }
+};
+
+// Process offer and create answer
+var offerInit = new RTCSessionDescriptionInit { 
+    type = RTCSdpType.offer, 
+    sdp = receivedSdp 
+};
+peerConnection.setRemoteDescription(offerInit);
+
+var answer = peerConnection.createAnswer(null);
+await peerConnection.setLocalDescription(answer);
+
+// Send answer back via WebSocket
+SendSignaling(new { type = "answer", sdp = answer.sdp });
+```
+
+**Source**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:38`
+
+## Audio codec configuration
+
+### Supported codecs
+
+The backend dynamically selects codecs based on session configuration:
+
+<Tabs>
+  <Tab title="OPUS (Recommended)">
+    **Best for**: WebRTC applications, modern browsers
+
+    ```csharp
+    new AudioFormat(
+        AudioCodecsEnum.OPUS, 
+        111,  // Payload type
+        48000,  // Sample rate
+        2,  // Channels (stereo)
+        "minptime=10;useinbandfec=1"  // FEC for packet loss
+    )
+    ```
+
+    **Benefits**:
+    - Superior quality at low bitrates
+    - Built-in forward error correction
+    - Wide browser support
+    - Adaptive bitrate
+  </Tab>
+
+  <Tab title="G.711 μ-law">
+    **Best for**: Legacy compatibility, North America
+
+    ```csharp
+    new AudioFormat(
+        AudioCodecsEnum.PCMU, 
+        0,  // Standard payload type
+        8000,  // Sample rate
+        1,  // Mono
+        ""
+    )
+    ```
+
+    **Characteristics**:
+    - 64 kbps fixed bitrate
+    - Narrowband (4 kHz bandwidth)
+    - Universal support
+  </Tab>
+
+  <Tab title="G.711 A-law">
+    **Best for**: European telephony systems
+
+    ```csharp
+    new AudioFormat(
+        AudioCodecsEnum.PCMA, 
+        8,  // Standard payload type
+        8000,
+        1,
+        ""
+    )
+    ```
+  </Tab>
+
+  <Tab title="G.722">
+    **Best for**: Wideband voice quality
+
+    ```csharp
+    new AudioFormat(
+        AudioCodecsEnum.G722, 
+        9,
+        16000,  // Wideband
+        1,
+        ""
+    )
+    ```
+
+    **Benefits**:
+    - Better quality than G.711
+    - 7 kHz audio bandwidth
+    - Lower bitrate than uncompressed
+  </Tab>
+</Tabs>
+
+**Codec mapping**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:72`
+
+### Audio configuration object
+
+```javascript
+// Client specifies preferred audio settings
+const audioConfig = {
+  input: {
+    codec: 'OPUS',
+    sampleRate: 48000,
+    bitsPerSample: 16,
+    channels: 1  // Mono for efficiency
+  },
+  output: {
+    codec: 'OPUS',
+    sampleRate: 48000,
+    bitsPerSample: 16,
+    channels: 1,
+    frameDurationMs: 20  // 20ms frames
+  }
+};
+```
+
+## Signaling protocol
+
+### Message types
+
+WebSocket messages during WebRTC setup:
+
+#### Offer (Client → Backend)
+
+```json
+{
+  "type": "offer",
+  "sdp": "v=0\r\no=- 1234567890 2 IN IP4 127.0.0.1\r\n..."
+}
+```
+
+#### Answer (Backend → Client)
+
+```json
+{
+  "type": "answer",
+  "sdp": "v=0\r\no=- 9876543210 2 IN IP4 127.0.0.1\r\n..."
+}
+```
+
+#### ICE Candidate (Bidirectional)
+
+```json
+{
+  "type": "candidate",
+  "candidate": {
+    "candidate": "candidate:1 1 UDP 2130706431 192.168.1.100 54321 typ host",
+    "sdpMid": "0",
+    "sdpMLineIndex": 0,
+    "usernameFragment": "abc123"
+  }
+}
+```
+
+### Signaling loop
+
+Backend maintains signaling channel:
+
+```csharp
+private async Task StartSignalingLoop(CancellationToken cancellationToken) {
+    var buffer = new ArraySegment<byte>(new byte[8192]);
+    
+    while (_signalingSocket.State == WebSocketState.Open) {
+        var result = await _signalingSocket.ReceiveAsync(buffer, cancellationToken);
+        
+        if (result.MessageType == WebSocketMessageType.Text) {
+            string message = Encoding.UTF8.GetString(buffer.Array, 0, result.Count);
+            await HandleSignalingMessageAsync(message);
+        }
+    }
+}
+```
+
+**Source**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:84`
+
+## Data channel support
+
+WebRTC includes a data channel for text messaging:
+
+### Backend setup
+
+```csharp
+_peerConnection.ondatachannel += (dc) => {
+    _logger.LogInformation($"Data channel established: {dc.label}");
+    
+    dc.onmessage += (rtcDc, proto, data) => {
+        string text = Encoding.UTF8.GetString(data);
+        TextMessageReceived?.Invoke(this, text);
+    };
+    
+    // Send confirmation
+    dc.send("Backend connected");
+};
+```
+
+### Client usage
+
+```javascript
+// Create data channel before creating offer
+const dataChannel = pc.createDataChannel('chat');
+
+dataChannel.onopen = () => {
+  console.log('Data channel open');
+  dataChannel.send('Hello from client');
+};
+
+dataChannel.onmessage = (event) => {
+  console.log('Received:', event.data);
+};
+
+// Send text during conversation
+dataChannel.send(JSON.stringify({
+  type: 'metadata',
+  userId: 'user-123'
+}));
+```
+
+## Connection states
+
+### Monitoring connection health
+
+```javascript
+pc.onconnectionstatechange = () => {
+  console.log('Connection state:', pc.connectionState);
+  
+  switch (pc.connectionState) {
+    case 'connected':
+      // Fully connected, media flowing
+      showStatus('Connected to AI agent');
+      break;
+      
+    case 'disconnected':
+      // Temporary network issue
+      showStatus('Connection interrupted');
+      break;
+      
+    case 'failed':
+      // Connection failed, retry needed
+      showStatus('Connection failed');
+      reconnect();
+      break;
+      
+    case 'closed':
+      // Clean shutdown
+      showStatus('Call ended');
+      break;
+  }
+};
+
+pc.oniceconnectionstatechange = () => {
+  console.log('ICE state:', pc.iceConnectionState);
+};
+```
+
+### Backend monitoring
+
+```csharp
+peerConnection.onconnectionstatechange += (state) => {
+    _logger.LogInformation($"WebRTC connection state: {state}");
+    
+    if (state == RTCPeerConnectionState.failed || 
+        state == RTCPeerConnectionState.closed) {
+        Disconnected?.Invoke(this, $"WebRTC State: {state}");
+    }
+};
+```
+
+**Source**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:239`
+
+## Media streaming
+
+### Outbound audio (Backend → Client)
+
+```csharp
+public Task SendBinaryAsync(
+    byte[] data, 
+    int sampleRate, 
+    int bitsPerSample, 
+    int frameDurationMs, 
+    CancellationToken cancellationToken
+) {
+    // Calculate RTP timestamp increment
+    uint durationRtpUnits = (uint)(sampleRate * frameDurationMs) / 1000;
+    
+    // Send encoded audio via RTP
+    _peerConnection.SendAudio(durationRtpUnits, data);
+    
+    return Task.CompletedTask;
+}
+```
+
+**Source**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:183`
+
+### Inbound audio (Client → Backend)
+
+```csharp
+private void OnRtpPacketHandler(
+    IPEndPoint ep, 
+    SDPMediaTypesEnum media, 
+    RTPPacket pkt
+) {
+    if (media == SDPMediaTypesEnum.audio) {
+        // Extract encoded payload from RTP packet
+        // Pass to AI agent's audio decoder
+        BinaryMessageReceived?.Invoke(this, pkt.Payload);
+    }
+}
+```
+
+**Source**: `IqraInfrastructure/Managers/Conversation/Session/Client/Transport/WebRtcClientTransport.cs:174`
+
+## Mobile implementation
+
+### React Native example
+
+```javascript
+import { RTCPeerConnection, mediaDevices } from 'react-native-webrtc';
+
+const setupWebRTC = async () => {
+  // Get microphone access
+  const stream = await mediaDevices.getUserMedia({
+    audio: true,
+    video: false
+  });
+
+  const pc = new RTCPeerConnection({
+    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  });
+
+  // Add local audio track
+  stream.getTracks().forEach(track => {
+    pc.addTrack(track, stream);
+  });
+
+  // Create offer and follow same signaling flow
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  
+  // Send to backend via WebSocket
+  ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }));
+};
+```
+
+### iOS/Swift with WebRTC SDK
+
+```swift
+import WebRTC
+
+let config = RTCConfiguration()
+config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"])]
+
+let peerConnection = RTCPeerConnectionFactory().peerConnection(
+    with: config,
+    constraints: RTCMediaConstraints(mandatoryConstraints: nil, 
+                                     optionalConstraints: nil),
+    delegate: self
+)
+
+// Add audio track
+let audioTrack = createAudioTrack()
+peerConnection.add(audioTrack, streamIds: ["stream-id"])
+
+// Create and send offer
+peerConnection.offer(for: RTCMediaConstraints()) { sdp, error in
+    guard let sdp = sdp else { return }
+    peerConnection.setLocalDescription(sdp) { error in
+        // Send SDP to backend
+        sendSignaling(["type": "offer", "sdp": sdp.sdp])
+    }
+}
+```
+
+## Security considerations
+
+<Warning>
+**Token validation**: Backend validates session tokens before activating WebRTC transport to prevent unauthorized access.
+</Warning>
+
+```csharp
+var validatedSessionTokenResult = CallWebsocketTokenGenerator.ValidateHmacToken(
+    sessionToken, 
+    sessionId, 
+    clientId, 
+    _backendAppConfig.WebhookTokenSecret, 
+    out var validationError
+);
+
+if (!validatedSessionTokenResult) {
+    return result.SetFailureResult(
+        "AssignWebSocketToClientAsync:VALIDATION_FAILED", 
+        validationError
+    );
+}
+```
+
+**Source**: `IqraInfrastructure/Managers/WebSession/BackendWebSessionProcessorManager.cs:250`
+
+<Note>
+**STUN vs TURN**: Current implementation uses STUN for NAT traversal. For production, consider adding TURN servers for users behind restrictive firewalls.
+</Note>
+
+## Troubleshooting
+
+### ICE connection failures
+
+**Symptom**: Peer connection stuck in "checking" state
+
+**Solutions**:
+- Verify STUN server is reachable
+- Check firewall rules allow UDP traffic
+- Consider deploying TURN servers for relaying
+- Enable verbose ICE logging
+
+```javascript
+pc.onicegatheringstatechange = () => {
+  console.log('ICE gathering state:', pc.iceGatheringState);
+};
+
+pc.onicecandidate = (event) => {
+  if (event.candidate) {
+    console.log('New ICE candidate:', event.candidate.candidate);
+  } else {
+    console.log('ICE gathering complete');
+  }
+};
+```
+
+### Audio quality issues
+
+**Symptom**: Choppy or distorted audio
+
+**Solutions**:
+- Verify codec compatibility (prefer OPUS)
+- Check network bandwidth
+- Monitor packet loss via WebRTC stats
+- Adjust frame duration (20ms recommended)
+
+```javascript
+setInterval(async () => {
+  const stats = await pc.getStats();
+  stats.forEach(report => {
+    if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
+      console.log('Packets lost:', report.packetsLost);
+      console.log('Jitter:', report.jitter);
+    }
+  });
+}, 5000);
+```
+
+### SDP negotiation failures
+
+**Symptom**: `setRemoteDescription` fails
+
+**Common causes**:
+- Codec mismatch (backend doesn't support offered codec)
+- Invalid SDP format
+- Missing required media sections
+
+**Debug**: Log full SDP exchange
+
+```javascript
+pc.createOffer().then(offer => {
+  console.log('Offer SDP:', offer.sdp);
+});
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  if (msg.type === 'answer') {
+    console.log('Answer SDP:', msg.sdp);
+  }
+};
+```
+
+## Performance optimization
+
+<Note>
+**Use Opus with FEC**: Enable forward error correction to handle packet loss without retransmissions.
+</Note>
+
+<Note>
+**Optimize frame size**: 20ms frames balance latency and packet overhead. Smaller frames = lower latency but more overhead.
+</Note>
+
+<Note>
+**Monitor RTP stats**: Track jitter, packet loss, and round-trip time to detect quality degradation early.
+</Note>
+
+## Next steps
+
+- [WebSocket integration](/channels/websocket) - Simpler audio streaming alternative
+- [SIP trunking](/channels/sip-trunking) - Connect traditional telephony
+- [Voice configuration](/integrations/tts-providers) - Configure AI voice settings

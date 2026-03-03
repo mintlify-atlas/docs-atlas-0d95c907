@@ -1,0 +1,220 @@
+---
+title: FlowApp plugin system
+description: Introduction to building custom integrations with FlowApps
+---
+
+FlowApps are the plugin architecture that powers Iqra AI's integration ecosystem. They allow you to extend agent capabilities by connecting to external services and APIs.
+
+## What is a FlowApp?
+
+A FlowApp is a self-contained plugin that provides:
+
+- **Actions**: Operations that agents can perform (e.g., "Book a Meeting", "Send Email")
+- **Data Fetchers**: Dynamic dropdown options for action inputs (e.g., fetch list of event types)
+- **Schema Definitions**: JSON Schema files that define input validation and UI rendering
+- **Authentication**: Integration with the admin dashboard for credential management
+
+## Architecture overview
+
+FlowApps follow a structured architecture:
+
+```
+YourApp/
+├── YourApp.cs              # Main app definition (IFlowApp)
+├── Actions/
+│   ├── SendEmailAction.cs  # Action implementation (IFlowAction)
+│   └── SendEmail.json      # JSON Schema for inputs
+├── Fetchers/
+│   └── GetTemplatesFetcher.cs  # Data fetcher (IFlowDataFetcher)
+└── Models/
+    └── YourAppModels.cs    # Request/response models
+```
+
+### Core interfaces
+
+<CodeGroup>
+
+```csharp IFlowApp
+public interface IFlowApp
+{
+    string AppKey { get; }                    // Unique identifier (e.g., "cal_com")
+    string Name { get; }                       // Display name (e.g., "Cal.com")
+    string IconUrl { get; }                    // App icon URL
+    string? IntegrationType { get; }           // Links to admin dashboard credentials
+    IReadOnlyList<IFlowAction> Actions { get; }           // Available actions
+    IReadOnlyList<IFlowDataFetcher> DataFetchers { get; } // Dynamic data sources
+}
+```
+
+```csharp IFlowAction
+public interface IFlowAction
+{
+    string ActionKey { get; }              // Unique action ID
+    string Name { get; }                   // Display name
+    string Description { get; }            // Tooltip description
+    bool RequiresIntegration { get; }      // Requires auth?
+    
+    string GetInputSchemaJson();           // Auto-generated from .json file
+    IReadOnlyList<ActionOutputPort> GetOutputPorts(); // Define execution paths
+    
+    Task<ActionExecutionResult> ExecuteAsync(
+        JsonElement resolvedInput, 
+        BusinessAppIntegrationDecryptedModel? integration
+    );
+}
+```
+
+```csharp IFlowDataFetcher
+public interface IFlowDataFetcher
+{
+    string FetcherKey { get; }             // Referenced in schema via 'x-fetcher'
+    bool RequiresIntegration { get; }      // Default: true
+    
+    Task<List<DynamicOption>> FetchOptionsAsync(
+        BusinessAppIntegrationDecryptedModel? integration,
+        JsonElement context                // Current form state
+    );
+}
+```
+
+</CodeGroup>
+
+## Discovery and initialization
+
+The `FlowAppManager` automatically discovers all FlowApps at startup using reflection:
+
+```csharp
+// From FlowAppManager.cs:59
+private void InitializeApps()
+{
+    var appType = typeof(IFlowApp);
+    var types = Assembly.GetExecutingAssembly()
+        .GetTypes()
+        .Where(p => appType.IsAssignableFrom(p) && !p.IsInterface && !p.IsAbstract);
+
+    foreach (var type in types)
+    {
+        // Use DI to create instances
+        var appInstance = (IFlowApp)ActivatorUtilities.CreateInstance(_serviceProvider, type);
+        _apps.Add(appInstance.AppKey, appInstance);
+    }
+}
+```
+
+<Note>
+FlowApps can have constructor dependencies like `IHttpClientFactory` or `ILogger<T>` - they are resolved automatically via dependency injection.
+</Note>
+
+## Execution pipeline
+
+When an agent executes a FlowApp action, the following pipeline runs:
+
+<Steps>
+
+<Step title="Template resolution">
+Scriban templates in inputs are resolved:
+
+```csharp
+// User input: "{{ customer.name }}"
+// Becomes: "John Doe"
+var renderResult = await _scribanService.RenderDictionaryAsync(rawInputs, sessionContext);
+```
+</Step>
+
+<Step title="Schema validation">
+Resolved inputs are validated against the JSON Schema:
+
+```csharp
+var schemaJson = action.GetInputSchemaJson();
+var validationResult = await _schemaValidator.ValidateAsync(
+    jsonElement, 
+    schemaJson,
+    $"{appKey}_{actionKey}"
+);
+```
+</Step>
+
+<Step title="Action execution">
+The action's `ExecuteAsync` method is invoked:
+
+```csharp
+return await action.ExecuteAsync(jsonElement, GetDecryptedIntegration(integration));
+```
+</Step>
+
+<Step title="Output routing">
+The result's `OutputPortKey` determines the next node in the flow:
+
+```csharp
+return ActionExecutionResult.SuccessPort("success", bookingData);
+// or
+return ActionExecutionResult.SuccessPort("conflict", conflictData);
+// or
+return ActionExecutionResult.Failure("API_ERROR", errorMessage);
+```
+</Step>
+
+</Steps>
+
+## Authentication and integrations
+
+FlowApps can require authentication credentials managed through the admin dashboard:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/CalComApp.cs:14
+public string? IntegrationType => "cal_com"; // Matches admin dashboard
+```
+
+When `IntegrationType` is set:
+
+- Admins configure credentials in the dashboard
+- Credentials are encrypted at rest
+- `ExecuteAsync` receives decrypted credentials via the `integration` parameter
+
+```csharp
+var apiKey = integration.DecryptedFields["ApiKey"];
+```
+
+<Warning>
+If `IntegrationType` is `null`, the app is considered public and requires no setup. Set `RequiresIntegration = false` in your actions.
+</Warning>
+
+## Permissions and feature flags
+
+FlowApps support runtime permissions managed via the database:
+
+- **App-level**: Disable entire integration
+- **Action-level**: Disable specific actions
+- **Fetcher-level**: Disable data sources
+
+Permissions are cached for 10 minutes and checked before execution:
+
+```csharp IqraInfrastructure/Managers/FlowApp/FlowAppManager.cs:254-263
+var permissions = await GetCachedPermissionsAsync();
+var appPerm = permissions.FirstOrDefault(p => p.AppKey == appKey);
+
+if (appPerm?.DisabledAt != null)
+{
+    return ActionExecutionResult.Failure(
+        "APP_DISABLED", 
+        appPerm.DisabledPublicReason ?? "Integration temporarily disabled."
+    );
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Creating FlowApps" icon="code" href="/developers/flowapp/overview/creating-flowapps">
+Step-by-step guide to building your first FlowApp
+</Card>
+
+<Card title="Schema definition" icon="file-code" href="/developers/flowapp/schema-definition">
+Learn how to define JSON schemas for action inputs
+</Card>
+
+<Card title="Examples" icon="lightbulb" href="/developers/flowapp/overview/examples">
+Explore real-world FlowApp implementations
+</Card>
+
+</CardGroup>

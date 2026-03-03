@@ -1,0 +1,581 @@
+---
+title: FlowApp examples
+description: Real-world FlowApp implementations and patterns
+---
+
+This page showcases complete FlowApp implementations from the Iqra AI codebase.
+
+## Cal.com integration
+
+The Cal.com FlowApp demonstrates a full-featured integration with multiple actions, dynamic fetchers, and conditional schemas.
+
+### App definition
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/CalComApp.cs
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Interfaces.Integration;
+using IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Actions;
+using IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Fetchers;
+using Microsoft.Extensions.Logging;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom
+{
+    public class CalComApp : IFlowApp
+    {
+        public string AppKey => "cal_com";
+        public string Name => "Cal.com";
+        public string IconUrl => "https://cal.com/favicon.ico";
+        public string? IntegrationType => "cal_com";
+
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly ILogger<CalComApp> _logger;
+        private const string BaseUrl = "https://api.cal.com/";
+
+        public IReadOnlyList<IFlowAction> Actions { get; }
+        public IReadOnlyList<IFlowDataFetcher> DataFetchers { get; }
+
+        public CalComApp(IHttpClientFactory httpClientFactory, ILogger<CalComApp> logger)
+        {
+            _httpClientFactory = httpClientFactory;
+            _logger = logger;
+
+            Actions = new List<IFlowAction>
+            {
+                new AddGuestsAction(this),
+                new BookMeetingAction(this),
+                new CancelBookingAction(this),
+                new GetAllBookingsAction(this),
+                new GetBookingAction(this),
+                new GetSlotsAction(this),
+                new MarkAbsentAction(this),
+                new RescheduleBookingAction(this)
+            };
+
+            DataFetchers = new List<IFlowDataFetcher>
+            {
+                new GetEventTypesByIdFetcher(this)
+            };
+        }
+
+        public HttpClient CreateClient()
+        {
+            var client = _httpClientFactory.CreateClient();
+            client.BaseAddress = new Uri(BaseUrl);
+            return client;
+        }
+    }
+}
+```
+
+**Key patterns:**
+
+- **Shared HttpClient factory**: The `CreateClient()` helper method is used by all actions and fetchers
+- **Base URL constant**: Centralized API endpoint configuration
+- **DI integration**: Leverages `IHttpClientFactory` and `ILogger<T>`
+
+### Action with multiple output ports
+
+The `BookMeetingAction` handles different API response codes with specific output ports:
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeetingAction.cs
+using IqraCore.Entities.FlowApp;
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Models.FlowApp.Integration;
+using IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Models;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Actions
+{
+    public partial class BookMeetingAction : IFlowAction
+    {
+        private readonly CalComApp _app;
+
+        public BookMeetingAction(CalComApp app) => _app = app;
+
+        public string ActionKey => "BookMeeting";
+        public string Name => "Book a Meeting";
+        public string Description => "Schedules a new booking on Cal.com.";
+
+        public IReadOnlyList<ActionOutputPort> GetOutputPorts()
+        {
+            return new List<ActionOutputPort>
+            {
+                new ActionOutputPort { Key = "success", Label = "Success (201)" },
+                new ActionOutputPort { Key = "conflict", Label = "Slot Taken (409)" },
+                new ActionOutputPort { Key = "error", Label = "Error" }
+            };
+        }
+
+        public async Task<ActionExecutionResult> ExecuteAsync(
+            JsonElement input, 
+            BusinessAppIntegrationDecryptedModel integration)
+        {
+            try
+            {
+                var apiKey = integration.DecryptedFields["ApiKey"];
+                var client = _app.CreateClient();
+
+                // Build request from validated input
+                var request = new CreateBookingRequest
+                {
+                    Start = input.GetProperty("start").GetString() ?? string.Empty,
+                    Attendee = new Attendee
+                    {
+                        Name = input.GetProperty("attendeeName").GetString() ?? "Guest",
+                        Email = input.GetProperty("attendeeEmail").GetString() ?? "",
+                        TimeZone = input.TryGetProperty("attendeeTimeZone", out var tz) 
+                            ? tz.GetString() ?? "UTC" 
+                            : "UTC",
+                        PhoneNumber = input.TryGetProperty("attendeePhone", out var ph) 
+                            ? ph.GetString() 
+                            : null,
+                        Language = "en"
+                    },
+                    Metadata = new Dictionary<string, string>()
+                };
+
+                // Add optional notes
+                if (input.TryGetProperty("notes", out var notes))
+                {
+                    request.Metadata.Add("notes", notes.GetString() ?? "");
+                }
+
+                // Handle polymorphic targeting (ID vs Slug)
+                if (input.TryGetProperty("eventTypeId", out var id))
+                {
+                    request.EventTypeId = id.GetInt32();
+                }
+                else if (input.TryGetProperty("teamSlug", out var team))
+                {
+                    request.TeamSlug = team.GetString();
+                    request.EventTypeSlug = input.GetProperty("eventTypeSlug").GetString();
+                }
+                else
+                {
+                    request.Username = input.GetProperty("username").GetString();
+                    request.EventTypeSlug = input.GetProperty("eventTypeSlug").GetString();
+                }
+
+                // Execute API call
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, "/v2/bookings");
+                httpRequest.Content = new StringContent(
+                    JsonSerializer.Serialize(request), 
+                    System.Text.Encoding.UTF8, 
+                    "application/json"
+                );
+                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
+                httpRequest.Headers.Add("cal-api-version", "2024-08-13");
+                
+                var response = await client.SendAsync(httpRequest);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                // Handle success
+                if (response.IsSuccessStatusCode)
+                {
+                    var resultData = JsonSerializer.Deserialize<CalComResponse<BookingResponseData>>(responseContent);
+                    return ActionExecutionResult.SuccessPort("success", resultData?.Data);
+                }
+
+                // Handle slot conflict (common in real-time booking)
+                if (response.StatusCode == HttpStatusCode.Conflict)
+                {
+                    return ActionExecutionResult.SuccessPort(
+                        "conflict", 
+                        new { message = "Time slot is no longer available." }
+                    );
+                }
+
+                // General error
+                return ActionExecutionResult.Failure(
+                    "API_ERROR", 
+                    $"Cal.com Error: {response.StatusCode} - {responseContent}"
+                );
+            }
+            catch (Exception ex)
+            {
+                return ActionExecutionResult.Failure("EXCEPTION", ex.Message);
+            }
+        }
+    }
+}
+```
+
+**Key patterns:**
+
+- **Multiple output ports**: `success`, `conflict`, and `error` allow the agent to handle different scenarios
+- **Optional fields**: Uses `TryGetProperty` for optional inputs like `notes` and `attendeePhone`
+- **Polymorphic input handling**: Supports three different booking methods (by ID, by username, or by team)
+- **Structured error responses**: Returns specific error codes and messages
+
+### Schema with conditional fields
+
+The `BookMeeting.json` schema demonstrates `oneOf` for mutually exclusive field groups:
+
+```json IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Actions/BookMeeting.json
+{
+  "type": "object",
+  "title": "Book a Meeting",
+  "required": ["start", "attendeeName", "attendeeEmail"],
+  "properties": {
+    "start": {
+      "type": "string",
+      "title": "Start Time",
+      "description": "ISO 8601 Date string (e.g. 2024-01-01T10:00:00Z)"
+    },
+    "attendeeName": {
+      "type": "string",
+      "title": "Attendee Name"
+    },
+    "attendeeEmail": {
+      "type": "string",
+      "title": "Attendee Email"
+    },
+    "attendeeTimeZone": {
+      "type": "string",
+      "title": "Attendee TimeZone",
+      "default": "UTC"
+    },
+    "attendeePhone": {
+      "type": "string",
+      "title": "Attendee Phone",
+      "description": "Required for SMS reminders"
+    },
+    "notes": {
+      "type": "string",
+      "title": "Additional Notes"
+    }
+  },
+  "oneOf": [
+    {
+      "title": "By Event ID",
+      "required": ["eventTypeId"],
+      "properties": {
+        "eventTypeId": {
+          "type": "integer",
+          "title": "Event Type ID",
+          "x-fetcher": "GetEventTypesById"
+        }
+      }
+    },
+    {
+      "title": "By User & Slug",
+      "required": ["username", "eventTypeSlug"],
+      "properties": {
+        "username": {
+          "type": "string",
+          "title": "Username"
+        },
+        "eventTypeSlug": {
+          "type": "string",
+          "title": "Event Type Slug"
+        }
+      }
+    },
+    {
+      "title": "By Team & Slug",
+      "required": ["teamSlug", "eventTypeSlug"],
+      "properties": {
+        "teamSlug": {
+          "type": "string",
+          "title": "Team Slug"
+        },
+        "eventTypeSlug": {
+          "type": "string",
+          "title": "Event Type Slug"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Key patterns:**
+
+- **Common base properties**: Fields like `start`, `attendeeName`, `attendeeEmail` are always required
+- **Optional fields**: `attendeeTimeZone` has a default value
+- **oneOf variants**: Three mutually exclusive ways to target an event type
+- **Dynamic fetcher**: `x-fetcher` connects the field to a data source
+
+### Data fetcher with authentication
+
+```csharp IqraInfrastructure/Managers/FlowApp/Apps/CalCom/Fetchers/GetEventTypesByIdFetcher.cs
+using IqraCore.Entities.FlowApp;
+using IqraCore.Interfaces.FlowApp;
+using IqraCore.Models.FlowApp.Integration;
+using IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Models;
+using System.Net.Http.Json;
+using System.Text.Json;
+
+namespace IqraInfrastructure.Managers.FlowApp.Apps.CalCom.Fetchers
+{
+    public class GetEventTypesByIdFetcher : IFlowDataFetcher
+    {
+        private readonly CalComApp _app;
+        
+        public GetEventTypesByIdFetcher(CalComApp app) { _app = app; }
+
+        public string FetcherKey => "GetEventTypesById";
+
+        public async Task<List<DynamicOption>> FetchOptionsAsync(
+            BusinessAppIntegrationDecryptedModel? integration, 
+            JsonElement context)
+        {
+            if (integration == null) return new();
+
+            try
+            {
+                var apiKey = integration.DecryptedFields["ApiKey"];
+                var client = _app.CreateClient();
+
+                var httpRequest = new HttpRequestMessage(HttpMethod.Get, "/v2/event-types");
+                httpRequest.Headers.Add("Authorization", $"Bearer {apiKey}");
+                httpRequest.Headers.Add("cal-api-version", "2024-06-14");
+                
+                var response = await client.SendAsync(httpRequest);
+                if (!response.IsSuccessStatusCode) return new();
+
+                var result = await response.Content.ReadFromJsonAsync<CalComResponse<List<EventTypeDto>>>();
+
+                return result?.Data?.Select(e => new DynamicOption
+                {
+                    Label = $"{e.Title} ({e.Length}m)",
+                    Value = e.Id,
+                    Description = $"ID: {e.Id}"
+                }).ToList() ?? new();
+            }
+            catch { return new(); }
+        }
+    }
+}
+```
+
+**Key patterns:**
+
+- **Null check**: Returns empty list if integration is not provided
+- **Error tolerance**: Catches all exceptions and returns empty list (prevents UI errors)
+- **Rich labels**: Combines title and duration for better UX ("30min Consultation (30m)")
+- **API versioning**: Uses version headers for API compatibility
+
+## Common patterns
+
+### Pattern: Handling optional fields
+
+```csharp
+// Check if field exists before accessing
+if (input.TryGetProperty("optionalField", out var field))
+{
+    var value = field.GetString();
+    // Use the value
+}
+
+// Provide defaults for missing fields
+var timezone = input.TryGetProperty("timeZone", out var tz) 
+    ? tz.GetString() ?? "UTC" 
+    : "UTC";
+```
+
+### Pattern: Returning structured data
+
+```csharp
+// Return useful data for downstream nodes
+return ActionExecutionResult.SuccessPort("success", new 
+{
+    bookingId = result.Id,
+    bookingUid = result.Uid,
+    confirmationUrl = result.Url,
+    startTime = result.StartTime,
+    endTime = result.EndTime,
+    attendees = result.Attendees.Select(a => new { a.Name, a.Email })
+});
+```
+
+### Pattern: Multiple authentication methods
+
+```csharp
+public async Task<ActionExecutionResult> ExecuteAsync(
+    JsonElement input, 
+    BusinessAppIntegrationDecryptedModel integration)
+{
+    // Support both API key and OAuth token
+    string authHeader;
+    if (integration.DecryptedFields.ContainsKey("ApiKey"))
+    {
+        authHeader = $"Bearer {integration.DecryptedFields["ApiKey"]}";
+    }
+    else if (integration.DecryptedFields.ContainsKey("AccessToken"))
+    {
+        authHeader = $"Bearer {integration.DecryptedFields["AccessToken"]}";
+    }
+    else
+    {
+        return ActionExecutionResult.Failure("AUTH_ERROR", "No valid credentials found");
+    }
+    
+    httpRequest.Headers.Add("Authorization", authHeader);
+}
+```
+
+### Pattern: Context-dependent fetcher
+
+```csharp
+public async Task<List<DynamicOption>> FetchOptionsAsync(
+    BusinessAppIntegrationDecryptedModel? integration, 
+    JsonElement context)
+{
+    // Get parent selection from form state
+    if (context.TryGetProperty("teamId", out var teamIdElement))
+    {
+        var teamId = teamIdElement.GetInt32();
+        // Fetch only members of this team
+        var response = await client.GetAsync($"/teams/{teamId}/members");
+        // ...
+    }
+    else
+    {
+        // No team selected, return all members
+        var response = await client.GetAsync("/members");
+        // ...
+    }
+}
+```
+
+### Pattern: Rate limit handling
+
+```csharp
+public async Task<ActionExecutionResult> ExecuteAsync(
+    JsonElement input, 
+    BusinessAppIntegrationDecryptedModel integration)
+{
+    var response = await client.SendAsync(httpRequest);
+    
+    if (response.StatusCode == HttpStatusCode.TooManyRequests)
+    {
+        var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(60);
+        
+        return ActionExecutionResult.Failure(
+            "RATE_LIMIT", 
+            $"Rate limit exceeded. Retry after {retryAfter.TotalSeconds} seconds."
+        );
+    }
+    
+    // Continue with normal processing
+}
+```
+
+### Pattern: Pagination support
+
+```csharp
+public async Task<ActionExecutionResult> ExecuteAsync(
+    JsonElement input, 
+    BusinessAppIntegrationDecryptedModel integration)
+{
+    var allItems = new List<Item>();
+    var page = 1;
+    var hasMore = true;
+    
+    while (hasMore)
+    {
+        var response = await client.GetAsync($"/items?page={page}&limit=100");
+        var result = await response.Content.ReadFromJsonAsync<PaginatedResponse>();
+        
+        allItems.AddRange(result.Items);
+        hasMore = result.HasMore;
+        page++;
+        
+        // Safety limit
+        if (page > 100) break;
+    }
+    
+    return ActionExecutionResult.SuccessPort("success", new { items = allItems, count = allItems.Count });
+}
+```
+
+### Pattern: Webhook registration
+
+```csharp
+public class RegisterWebhookAction : IFlowAction
+{
+    public string ActionKey => "RegisterWebhook";
+    public string Name => "Register Webhook";
+    public string Description => "Subscribe to real-time events.";
+    
+    public async Task<ActionExecutionResult> ExecuteAsync(
+        JsonElement input, 
+        BusinessAppIntegrationDecryptedModel integration)
+    {
+        var webhookUrl = input.GetProperty("webhookUrl").GetString();
+        var events = input.GetProperty("events").EnumerateArray()
+            .Select(e => e.GetString())
+            .ToList();
+        
+        var request = new CreateWebhookRequest
+        {
+            Url = webhookUrl,
+            Events = events,
+            Active = true
+        };
+        
+        var response = await client.PostAsJsonAsync("/webhooks", request);
+        var result = await response.Content.ReadFromJsonAsync<WebhookResponse>();
+        
+        return ActionExecutionResult.SuccessPort("success", new 
+        { 
+            webhookId = result.Id,
+            secret = result.Secret // Store for signature verification
+        });
+    }
+}
+```
+
+## Testing FlowApps
+
+Create unit tests for your actions:
+
+```csharp
+[Fact]
+public async Task BookMeeting_ValidInput_ReturnsSuccess()
+{
+    // Arrange
+    var httpClientFactory = CreateMockHttpClientFactory();
+    var logger = Mock.Of<ILogger<CalComApp>>();
+    var app = new CalComApp(httpClientFactory, logger);
+    var action = new BookMeetingAction(app);
+    
+    var input = JsonSerializer.SerializeToElement(new
+    {
+        start = "2024-01-15T10:00:00Z",
+        attendeeName = "John Doe",
+        attendeeEmail = "john@example.com",
+        eventTypeId = 123
+    });
+    
+    var integration = new BusinessAppIntegrationDecryptedModel
+    {
+        DecryptedFields = new Dictionary<string, string> { ["ApiKey"] = "test_key" }
+    };
+    
+    // Act
+    var result = await action.ExecuteAsync(input, integration);
+    
+    // Assert
+    Assert.True(result.Success);
+    Assert.Equal("success", result.OutputPortKey);
+    Assert.NotNull(result.Data);
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+
+<Card title="Overview" icon="book" href="/developers/flowapp/overview/overview">
+Review the FlowApp architecture and concepts
+</Card>
+
+<Card title="Creating FlowApps" icon="code" href="/developers/flowapp/overview/creating-flowapps">
+Build your own FlowApp integration
+</Card>
+
+</CardGroup>

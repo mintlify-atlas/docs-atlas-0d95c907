@@ -1,0 +1,348 @@
+---
+title: LLM provider integrations
+description: Configure OpenAI, Anthropic, Google Gemini, Groq, and Azure for language intelligence
+---
+
+Iqra AI supports multiple large language model (LLM) providers through a unified streaming interface. All providers implement the `ILLMService` interface, ensuring consistent behavior regardless of which vendor you choose.
+
+## Supported providers
+
+The platform currently supports five LLM providers:
+
+<Tabs>
+  <Tab title="OpenAI">
+    ### OpenAI GPT
+
+    **Provider ID:** `OpenAIGPT`  
+    **Implementation:** `OpenAIGPTStreamingLLMService.cs`
+
+    Supports the full GPT model family including GPT-4o, GPT-4 Turbo, and o-series reasoning models.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | OpenAI API key from platform.openai.com |
+    | `endpoint` | text | Yes | API endpoint (default: `https://api.openai.com/v1`) |
+    | `model` | select | Yes | Model identifier (e.g., `gpt-4o`, `gpt-4-turbo`) |
+    | `temperature` | number | No | Sampling temperature (0.0-2.0) |
+    | `topP` | number | No | Nucleus sampling (0.0-1.0) |
+    | `maxTokens` | number | No | Max completion tokens (min: 200) |
+    | `serviceTier` | select | No | `default`, `flex`, or `priority` |
+    | `reasoningEffort` | select | No | For o-series models: `minimal`, `low`, `medium`, `high` |
+    | `reasoningSummary` | select | No | `auto`, `concise`, or `detailed` |
+
+    #### Supported models
+
+    - **GPT-4o** - Multimodal flagship model
+    - **GPT-4o mini** - Cost-optimized variant
+    - **GPT-4 Turbo** - Previous generation high-performance
+    - **o1** - Advanced reasoning model
+    - **o1-mini** - Faster reasoning variant
+    - **o3-mini** - Latest reasoning model
+
+    <Note>
+    The `reasoningEffort` and `reasoningSummary` parameters only apply to o-series models. They control how much computational budget the model uses for chain-of-thought reasoning.
+    </Note>
+
+    #### Example configuration
+
+    ```json
+    {
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "maxTokens": 1000,
+      "serviceTier": "default"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Anthropic">
+    ### Anthropic Claude
+
+    **Provider ID:** `AnthropicClaude`  
+    **Implementation:** `AnthropicClaudeStreamingLLMService.cs`
+
+    Supports Claude 3.5 Sonnet, Claude 3 Opus, and other Claude family models with extended thinking capabilities.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Anthropic API key from console.anthropic.com |
+    | `model` | select | Yes | Model identifier (e.g., `claude-3-5-sonnet-20241022`) |
+    | `temperature` | number | No | Sampling temperature (0.0-1.0) |
+    | `topP` | number | No | Nucleus sampling (0.0-1.0) |
+    | `topK` | number | No | Top-K sampling |
+    | `maxTokens` | number | No | Max completion tokens (min: 200) |
+    | `thinkingEnabled` | boolean | No | Enable extended thinking mode |
+    | `thinkingBudgetTokens` | number | No | Token budget for thinking (when enabled) |
+    | `inferenceGeo` | select | No | Geographic routing: `us`, `eu`, `auto` |
+    | `serviceTier` | select | No | `auto` or `standard_only` (future SDK support) |
+
+    #### Supported models
+
+    - **Claude 3.5 Sonnet** - Latest flagship model
+    - **Claude 3.5 Haiku** - Fast, cost-effective model
+    - **Claude 3 Opus** - Most capable model
+    - **Claude 3 Sonnet** - Balanced performance
+    - **Claude 3 Haiku** - Fastest model
+
+    <Warning>
+    The `thinkingEnabled` feature allows Claude to use extended reasoning chains before responding. This increases latency and token usage but improves response quality for complex tasks.
+    </Warning>
+
+    #### Example configuration
+
+    ```json
+    {
+      "model": "claude-3-5-sonnet-20241022",
+      "temperature": 0.7,
+      "maxTokens": 2000,
+      "thinkingEnabled": false,
+      "inferenceGeo": "auto"
+    }
+    ```
+  </Tab>
+
+  <Tab title="Google Gemini">
+    ### Google AI Gemini
+
+    **Provider ID:** `GoogleAIGemini`  
+    **Implementation:** `GoogleAIGeminiStreamingLLMService.cs`
+
+    Integrates with Google's Gemini models through the Generative AI SDK.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Google AI API key from aistudio.google.com |
+    | `model` | select | Yes | Model identifier (e.g., `gemini-1.5-pro`) |
+    | `temperature` | number | No | Sampling temperature (0.0-2.0) |
+    | `topP` | number | No | Nucleus sampling (0.0-1.0) |
+    | `topK` | number | No | Top-K sampling |
+    | `maxTokens` | number | No | Max completion tokens (min: 200) |
+
+    #### Supported models
+
+    - **Gemini 2.0 Flash** - Latest multimodal model
+    - **Gemini 1.5 Pro** - High-capability model
+    - **Gemini 1.5 Flash** - Fast, efficient model
+
+    #### Example configuration
+
+    ```json
+    {
+      "model": "gemini-2.0-flash-exp",
+      "temperature": 0.8,
+      "maxTokens": 1500,
+      "topK": 40
+    }
+    ```
+  </Tab>
+
+  <Tab title="Groq">
+    ### Groq Cloud
+
+    **Provider ID:** `GroqCloud`  
+    **Implementation:** `GroqCloudStreamingLLMService.cs`
+
+    Ultra-fast inference using Groq's custom LPU hardware for models like Llama and Mixtral.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Groq API key from console.groq.com |
+    | `endpoint` | text | Yes | API endpoint (default: `https://api.groq.com/openai/v1`) |
+    | `model` | select | Yes | Model identifier (e.g., `llama-3.3-70b-versatile`) |
+    | `temperature` | number | No | Sampling temperature (0.0-2.0) |
+    | `topP` | number | No | Nucleus sampling (0.0-1.0) |
+    | `maxTokens` | number | No | Max completion tokens (min: 200) |
+
+    #### Supported models
+
+    - **Llama 3.3 70B** - Latest Meta Llama model
+    - **Llama 3.1 70B/8B** - Instruction-tuned variants
+    - **Mixtral 8x7B** - Mixture of experts model
+    - **Gemma 2 9B** - Google's open model
+
+    <Note>
+    Groq provides industry-leading inference speeds (500+ tokens/second) making it ideal for real-time voice applications where latency is critical.
+    </Note>
+
+    #### Example configuration
+
+    ```json
+    {
+      "model": "llama-3.3-70b-versatile",
+      "temperature": 0.7,
+      "maxTokens": 1000
+    }
+    ```
+  </Tab>
+
+  <Tab title="Azure">
+    ### Azure AI Inference
+
+    **Provider ID:** `AzureAIInference`  
+    **Implementation:** `AzureAIInferenceStreamingLLM.cs`
+
+    Connect to models deployed in Azure AI Studio, including GPT-4, Phi, Mistral, and more.
+
+    #### Configuration fields
+
+    | Field | Type | Required | Description |
+    |-------|------|----------|-------------|
+    | `apiKey` | password | Yes | Azure deployment key |
+    | `endpoint` | text | Yes | Full deployment endpoint URL |
+    | `model` | select | Yes | Deployment name (configured in Azure) |
+    | `temperature` | number | No | Sampling temperature (0.0-2.0) |
+    | `topP` | number | No | Nucleus sampling (0.0-1.0) |
+    | `maxTokens` | number | No | Max completion tokens (min: 200) |
+
+    #### Supported models
+
+    Any model deployed through Azure AI Studio:
+
+    - **GPT-4o / GPT-4 Turbo** - OpenAI models on Azure
+    - **Phi-3/4** - Microsoft's small language models
+    - **Mistral Large** - Mistral AI models
+    - **Llama variants** - Meta models
+
+    <Warning>
+    Azure deployments require you to specify the exact deployment name you created in Azure AI Studio, not the base model name. Ensure your endpoint URL includes your resource name.
+    </Warning>
+
+    #### Example configuration
+
+    ```json
+    {
+      "endpoint": "https://my-resource.openai.azure.com/openai/deployments/gpt-4o",
+      "model": "gpt-4o",
+      "temperature": 0.7,
+      "maxTokens": 2000
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Implementation details
+
+All LLM providers follow a consistent implementation pattern:
+
+### Interface contract
+
+```csharp
+public interface ILLMService
+{
+    // Streaming events
+    event EventHandler<ConversationAgentEventLLMStreamed>? MessageStreamed;
+    event EventHandler<ConversationAgentEventLLMStreamCancelled> MessageStreamedCancelled;
+    
+    // Core methods
+    Task ProcessInputAsync(CancellationToken cancellationToken, 
+                          string? beforeMessageContext = null, 
+                          string? afterMessageContext = null);
+    void AddUserMessage(string message);
+    void SetSystemPrompt(string prompt);
+    void Cancel();
+}
+```
+
+### Streaming architecture
+
+All providers use server-sent events (SSE) for streaming:
+
+1. **Request initiation** - `ProcessInputAsync` starts the streaming request
+2. **Chunk reception** - Provider SDK receives token deltas
+3. **Event emission** - `MessageStreamed` event fires for each chunk
+4. **Cancellation** - `Cancel()` stops the stream mid-flight
+
+This architecture ensures ultra-low latency for voice applications—the agent can start speaking before the LLM completes the full response.
+
+### Provider manager
+
+The `LLMProviderManager` (defined in `IqraInfrastructure/Managers/LLM/LLMProviderManager.cs`) handles:
+
+- **Provider registration** - Auto-discovers implementations via reflection
+- **Model catalog** - Maintains available models per provider
+- **Configuration validation** - Ensures required fields are present
+- **Instance creation** - Instantiates provider services with credentials
+- **Integration linking** - Connects to `IntegrationsManager` for credential lookup
+
+## Configuration best practices
+
+### Temperature tuning
+
+- **0.0-0.3** - Deterministic, factual responses (customer support, data lookup)
+- **0.4-0.7** - Balanced creativity (general conversation)
+- **0.8-1.0** - Creative, varied responses (storytelling, brainstorming)
+- **>1.0** - Highly random (rarely useful in production)
+
+### Token budgets
+
+- **Minimum 200 tokens** - Enforced by Iqra AI to prevent truncated responses
+- **Voice use cases** - Keep under 500 tokens for natural conversation pacing
+- **Complex reasoning** - Allocate 2000+ tokens for o-series or Claude thinking modes
+
+### Model selection
+
+<Tabs>
+  <Tab title="Latency-critical">
+    **Best options:**
+    - Groq Llama 3.3 70B (fastest inference)
+    - GPT-4o mini (good balance)
+    - Gemini 2.0 Flash (multimodal + speed)
+
+    Avoid o-series models and Claude with thinking enabled.
+  </Tab>
+
+  <Tab title="Quality-first">
+    **Best options:**
+    - GPT-4o (flagship)
+    - Claude 3.5 Sonnet (nuanced conversation)
+    - Gemini 1.5 Pro (long context)
+
+    Use extended thinking modes for complex tasks.
+  </Tab>
+
+  <Tab title="Cost-optimized">
+    **Best options:**
+    - GPT-4o mini
+    - Claude 3.5 Haiku
+    - Groq Llama 3.1 8B
+
+    Monitor token usage in production.
+  </Tab>
+</Tabs>
+
+## Adding custom providers
+
+To add a new LLM provider:
+
+1. **Add enum value** in `IqraCore/Entities/Interfaces/InterfaceLLMProviderEnum.cs`
+2. **Implement interface** in `IqraInfrastructure/Managers/LLM/Providers/`
+3. **Add static method** `GetProviderTypeStatic()` returning your enum value
+4. **Handle streaming** using provider's native SDK
+5. **Restart application** - Provider auto-registers on startup
+
+See `OpenAIGPTStreamingLLMService.cs:26-65` for reference implementation.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configure agent prompts" href="/build/agents/system-prompt">
+    Learn how to craft effective system prompts
+  </Card>
+  <Card title="Add voice output" href="/integrations/tts-providers">
+    Set up text-to-speech for conversations
+  </Card>
+  <Card title="Multi-language support" href="/build/multi-language">
+    Configure parallel language contexts
+  </Card>
+  <Card title="Script builder" href="/building/visual-ide">
+    Build conversation flows in the visual IDE
+  </Card>
+</CardGroup>

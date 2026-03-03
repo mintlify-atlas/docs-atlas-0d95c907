@@ -1,0 +1,480 @@
+---
+title: "Retrieval strategies and configuration"
+description: "Optimize knowledge base retrieval with vector search, full-text search, and hybrid approaches"
+---
+
+## Retrieval overview
+
+Retrieval is the process of finding relevant chunks from your knowledge base to answer a user's query. Iqra AI supports multiple retrieval strategies, each optimized for different use cases and content types.
+
+<Note>
+The retrieval strategy you choose significantly impacts both response quality and system performance. Consider your content characteristics and query patterns when configuring.
+</Note>
+
+## Retrieval strategies
+
+### Vector search
+
+Vector search uses semantic similarity to find relevant chunks:
+
+**How it works:**
+1. User query is converted to an embedding vector
+2. System searches Milvus for nearest neighbor chunks
+3. Results are ranked by cosine similarity
+
+**Best for:**
+- Semantic understanding of queries
+- Handling paraphrased or varied language
+- Multilingual content
+- Conceptual similarity over exact matching
+
+**Configuration:**
+
+```typescript
+{
+  Type: "VectorSearch",
+  TopK: 3,                    // Retrieve top 3 most similar chunks
+  UseScoreThreshold: true,
+  ScoreThreshold: 0.7,        // Only return chunks with >70% similarity
+  Rerank: {
+    Enabled: true,
+    Integration: "rerank-integration-id"
+  }
+}
+```
+
+<Tip>
+Start with TopK=3 and ScoreThreshold=0.7, then adjust based on retrieval quality. Higher thresholds improve precision but may reduce recall.
+</Tip>
+
+### Full-text search
+
+Full-text search uses keyword matching to find chunks:
+
+**How it works:**
+1. Keywords are extracted from user query
+2. System searches keyword index in Redis
+3. Matching chunks are retrieved from MongoDB
+
+**Best for:**
+- Exact term matching
+- Technical documentation with specific terminology
+- Acronyms and proper nouns
+- Code snippets and identifiers
+
+**Configuration:**
+
+```typescript
+{
+  Type: "FullTextSearch",
+  TopK: 3,
+  Rerank: {
+    Enabled: false,
+    Integration: null
+  }
+}
+```
+
+<Note>
+Full-text search doesn't use embeddings, making it faster and cheaper but less semantically aware.
+</Note>
+
+### Hybrid search
+
+Hybrid search combines vector and keyword approaches:
+
+**How it works:**
+1. Both vector and keyword searches run in parallel
+2. Results are merged using configurable strategy
+3. Duplicates are deduplicated
+4. Final results are ranked and returned
+
+**Best for:**
+- Maximum recall across query types
+- Mixed content (technical + conversational)
+- Handling diverse user query styles
+- Production environments requiring robustness
+
+**Configuration:**
+
+```typescript
+{
+  Type: "HybridSearch",
+  Mode: "WeightedScore",     // Combine by weighted scores
+  Weight: 0.7,                // 70% vector, 30% keyword
+  TopK: 3,
+  UseScoreThreshold: true,
+  ScoreThreshold: 0.6,        // Lower threshold for hybrid
+  RerankIntegration: null
+}
+```
+
+**Hybrid modes:**
+
+<CardGroup cols={2}>
+  <Card title="WeightedScore" icon="balance-scale">
+    Combines vector and keyword scores using configurable weight. Vector-heavy (0.6-0.8) works well for most use cases.
+  </Card>
+  <Card title="Rerank" icon="ranking-star">
+    Retrieves from both sources, then uses a rerank model to score relevance. More accurate but requires rerank integration.
+  </Card>
+</CardGroup>
+
+<Tip>
+Hybrid search with WeightedScore mode (weight=0.7) provides the best balance for most applications, combining semantic understanding with exact term matching.
+</Tip>
+
+## Retrieval parameters
+
+### TopK
+
+Number of chunks to retrieve from the knowledge base:
+
+- **TopK=1-2**: Highly focused responses, may miss context
+- **TopK=3-5**: Balanced approach, recommended for most use cases
+- **TopK=5-10**: Comprehensive context, but may include noise
+
+```typescript
+{
+  TopK: 3  // Retrieve 3 most relevant chunks
+}
+```
+
+<Note>
+Higher TopK values increase context window usage and may impact response latency. Balance retrieval breadth against token limits.
+</Note>
+
+### Score threshold
+
+Minimum similarity score for retrieved chunks:
+
+- **0.5-0.6**: Permissive, high recall, may include tangentially related content
+- **0.7-0.8**: Balanced, good precision/recall trade-off
+- **0.8-0.9**: Strict, high precision, may miss relevant but less similar chunks
+
+```typescript
+{
+  UseScoreThreshold: true,
+  ScoreThreshold: 0.7  // Only chunks with ≥70% similarity
+}
+```
+
+<Warning>
+If score threshold is too high, queries may return zero results. Monitor retrieval analytics to find the optimal threshold.
+</Warning>
+
+### Reranking
+
+Reranking models re-score retrieved chunks for improved relevance:
+
+```typescript
+{
+  Rerank: {
+    Enabled: true,
+    Integration: "cohere-rerank-integration-id"
+  }
+}
+```
+
+**Benefits:**
+- Improves precision of retrieval
+- Corrects for embedding model biases
+- Cross-encoder models often outperform bi-encoder retrieval
+
+**Trade-offs:**
+- Additional API call and latency
+- Extra cost per query
+- Requires rerank provider integration
+
+<Tip>
+Use reranking for high-stakes applications where accuracy is critical, such as medical, legal, or financial support agents.
+</Tip>
+
+## Post-processing pipeline
+
+After retrieval, chunks undergo several post-processing steps:
+
+### 1. Reranking
+
+If enabled, retrieved chunks are sent to a rerank model:
+
+```csharp
+var rerankedDocs = await _rerankService.RerankAsync(
+    query,
+    rawDocuments,
+    topK
+);
+```
+
+Rerankers supported:
+- **RerankModelService**: Uses external rerank API (Cohere, etc.)
+- **WeightedScoreReranker**: Combines vector and keyword scores
+- **PassthroughReranker**: No reranking, preserves original order
+
+### 2. Reordering
+
+Combats "lost in the middle" phenomenon where LLMs ignore mid-context information:
+
+```csharp
+var reorderedDocs = _reorderer.Reorder(rerankedDocs);
+```
+
+Strategy:
+- Most relevant chunks placed at start and end of context
+- Mid-relevance chunks placed in the middle
+- Optimizes for LLM attention patterns
+
+<Note>
+Research shows LLMs pay more attention to the beginning and end of context windows. Reordering exploits this behavior.
+</Note>
+
+### 3. Filtering
+
+Final filtering ensures quality:
+
+- **Score threshold**: Remove chunks below minimum score
+- **TopN**: Limit to configured number of chunks
+- **Deduplication**: Remove near-duplicate chunks
+
+```csharp
+var finalDocs = await _dataPostProcessor.ProcessAsync(
+    query,
+    rawDocs,
+    new RAGPostProcessingOptions {
+        TopN = topK,
+        ScoreThreshold = scoreThreshold
+    }
+);
+```
+
+## Context formatting
+
+Retrieved chunks are formatted into context for the agent:
+
+### Context string
+
+Chunks are concatenated with proper spacing:
+
+```
+[Chunk 1 text]
+
+[Chunk 2 text]
+
+[Chunk 3 text]
+```
+
+### Source attribution
+
+Each chunk includes metadata:
+
+```typescript
+{
+  DocumentId: 12345,
+  DocumentName: "Product Manual v2.pdf",
+  ChunkId: "abc123",
+  Content: "The product supports...",
+  Score: 0.87
+}
+```
+
+This enables:
+- Citing sources in responses
+- Debugging retrieval issues
+- Analytics on document usage
+
+<Tip>
+Configure your agent prompts to cite sources using the provided metadata, improving user trust and transparency.
+</Tip>
+
+## Agent integration
+
+### Search strategy
+
+Agents can override knowledge base retrieval settings:
+
+```typescript
+BusinessAppAgentKnowledgeBase: {
+  LinkedGroups: ["kb-id-1", "kb-id-2"],
+  SearchStrategy: {
+    // Override TopK for this agent
+    TopK: 5
+  },
+  Refinement: {
+    // Additional search refinement
+  }
+}
+```
+
+### Multi-knowledge base retrieval
+
+Agents can search across multiple knowledge bases:
+
+1. Query is sent to all linked knowledge bases
+2. Results are retrieved from each
+3. Combined results are merged and deduplicated
+4. Final post-processing produces unified context
+
+<Note>
+Multi-knowledge base retrieval allows agents to access diverse information sources while maintaining coherent responses.
+</Note>
+
+## Performance optimization
+
+### Collection loading
+
+Milvus collections are managed dynamically:
+
+```csharp
+var collectionLoadResult = await _collectionsLoadManager
+    .RegisterUseAsync(
+        collectionName,
+        sessionId,
+        releaseExpiry  // e.g., 1 hour
+    );
+```
+
+**Benefits:**
+- Collections loaded on first query
+- Kept in memory while actively used
+- Automatically released after idle period
+- Reduces memory footprint for large deployments
+
+<Tip>
+Frequently accessed knowledge bases remain hot in memory, while occasional ones are loaded on-demand with minimal latency.
+</Tip>
+
+### Embedding cache
+
+Query embeddings are cached to improve performance:
+
+```csharp
+if (options.IsCachable) {
+    var cacheResult = await _embeddingCacheManager
+        .TryGetEmbeddingAsync(cacheKey, ...);
+    
+    if (cacheResult.IsHit) {
+        // Use cached embedding, skip API call
+    }
+}
+```
+
+**Impact:**
+- 10-100x faster than generating new embeddings
+- Reduces embedding API costs
+- Especially effective for common queries
+
+### Parallel search
+
+Hybrid search executes vector and keyword searches in parallel:
+
+```csharp
+var vectorSearchTask = SearchByVectorAsync(options);
+var keywordSearchTask = SearchByKeywordsAsync(options);
+
+await Task.WhenAll(vectorSearchTask, keywordSearchTask);
+```
+
+Reduces total retrieval latency to the maximum of either search, not the sum.
+
+## Monitoring and debugging
+
+### Retrieval analytics
+
+Track key metrics:
+- **Retrieval latency**: Time to retrieve and process chunks
+- **Cache hit rate**: Percentage of cached embeddings used
+- **Average score**: Mean similarity of retrieved chunks
+- **Zero-result rate**: Queries returning no chunks
+
+### Testing retrieval
+
+Use the knowledge base testing interface:
+
+1. Enter test queries
+2. Review retrieved chunks and scores
+3. Analyze source attribution
+4. Iterate on configuration
+
+<Tip>
+Create a test query set covering typical user questions and edge cases. Use it to validate retrieval quality after configuration changes.
+</Tip>
+
+### Common issues
+
+**Too few results:**
+- Lower score threshold
+- Increase TopK
+- Check if documents are properly indexed
+- Verify embedding quality
+
+**Low relevance:**
+- Enable reranking
+- Adjust hybrid weight toward vector search
+- Improve chunking strategy
+- Consider different embedding model
+
+**High latency:**
+- Enable embedding cache
+- Reduce TopK
+- Disable reranking for non-critical queries
+- Verify Milvus collection is loaded
+
+## Best practices
+
+1. **Start simple**: Begin with vector search, add complexity as needed
+2. **Monitor quality**: Track retrieval metrics and user feedback
+3. **Test thoroughly**: Validate configuration with diverse queries
+4. **Balance cost/quality**: Optimize TopK and reranking for your budget
+5. **Iterate**: Continuously refine based on real-world performance
+
+## Advanced patterns
+
+### Query expansion
+
+Expand user queries before retrieval:
+
+```typescript
+// Use LLM to generate query variations
+const expandedQueries = await llm.expand(originalQuery);
+const allResults = await Promise.all(
+    expandedQueries.map(q => retrieve(q))
+);
+// Merge and deduplicate results
+```
+
+### Metadata filtering
+
+Filter chunks by metadata before vector search:
+
+```typescript
+{
+  filter: "documentType == 'manual' && version >= '2.0'"
+}
+```
+
+<Note>
+Metadata filtering is planned for future releases and will enable fine-grained retrieval control.
+</Note>
+
+### Contextual compression
+
+Compress retrieved chunks to fit context limits:
+
+1. Retrieve more chunks than needed
+2. Use LLM to extract relevant sentences
+3. Compress to fit context window
+4. Maintain source attribution
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Knowledge base setup" icon="wrench" href="/knowledge/setup">
+    Create and configure knowledge bases
+  </Card>
+  <Card title="Embedding providers" icon="brain" href="/knowledge/embedding-providers">
+    Optimize embedding configuration
+  </Card>
+  <Card title="Agent configuration" icon="robot" href="/agents/configuration">
+    Link knowledge bases to agents
+  </Card>
+</CardGroup>
