@@ -1,0 +1,145 @@
+{
+  "projectType": "saas",
+  "projectName": "Iqra AI",
+  "projectDescription": "Orchestrate high-fidelity Voice Conversational Agents with deterministic logic, sub-second latency, and native multi-language support",
+  "theme": "aspen",
+  "primaryColor": "#2563EB",
+  "lightColor": "#60A5FA",
+  "darkColor": "#1E40AF",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "deployment-options"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/agents",
+              "concepts/scripts",
+              "concepts/workflows",
+              "concepts/multi-language"
+            ]
+          },
+          {
+            "group": "Building Agents",
+            "pages": [
+              "building/visual-ide",
+              "building/agent-configuration",
+              "building/script-nodes",
+              "building/action-flows",
+              "building/secure-sessions",
+              "building/interruptions"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/overview",
+              "integrations/llm-providers",
+              "integrations/tts-providers",
+              "integrations/stt-providers",
+              "integrations/telephony",
+              "integrations/flowapps"
+            ]
+          },
+          {
+            "group": "Knowledge Base & RAG",
+            "pages": [
+              "knowledge/overview",
+              "knowledge/setup",
+              "knowledge/embedding-providers",
+              "knowledge/retrieval"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/cloud",
+              "deployment/self-hosting",
+              "deployment/requirements",
+              "deployment/configuration"
+            ]
+          },
+          {
+            "group": "Channels",
+            "pages": [
+              "channels/sip-trunking",
+              "channels/webrtc",
+              "channels/websocket"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "FlowApp System",
+            "pages": [
+              "developers/flowapp/overview",
+              "developers/flowapp/creating-flowapps",
+              "developers/flowapp/schema-definition",
+              "developers/flowapp/examples"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api/authentication",
+              "api/businesses",
+              "api/agents",
+              "api/calls",
+              "api/conversations",
+              "api/webhooks"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/multi-region",
+              "advanced/monitoring",
+              "advanced/scaling",
+              "advanced/security"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Visual IDE for Agent Design",
+    "Deterministic Action Flows",
+    "Native Multi-Language Support",
+    "Global Edge Network (Multi-Region)",
+    "Deep AI Model Integrations (BYOM)",
+    "Secure Sessions (PCI-DSS)",
+    "Omnichannel Deployment (SIP, WebRTC)",
+    "FlowApp Plugin System",
+    "Smart Turn Taking & Interruptions",
+    "RAG & Knowledge Base Integration"
+  ],
+  "publicApiSurface": [
+    "POST /api/v1/business/{businessId}/call/initiate",
+    "GET /api/v1/business/{businessId}",
+    "GET /api/v1/business/{businessId}/conversations",
+    "POST /api/v1/business/{businessId}/websession",
+    "BusinessManager",
+    "CallManager",
+    "AgentManager",
+    "FlowAppManager",
+    "LLMManager",
+    "TTSManager",
+    "STTManager",
+    "KnowledgeBaseManager",
+    "WebSessionManager"
+  ]
+}
