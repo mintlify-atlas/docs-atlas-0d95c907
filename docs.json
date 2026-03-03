@@ -107,9 +107,12 @@
             "group": "API Reference",
             "pages": [
               "api/authentication",
+              "api/user",
+              "api/usage",
               "api/businesses",
               "api/agents",
               "api/calls",
+              "api/queues",
               "api/conversations",
               "api/webhooks"
             ]

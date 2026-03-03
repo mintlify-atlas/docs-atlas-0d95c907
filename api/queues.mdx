@@ -1,0 +1,264 @@
+---
+title: Queues
+description: Manage and retrieve call queue information for inbound and outbound calls
+---
+
+The Queues API provides access to call queue data, allowing you to track the status of inbound and outbound calls in real-time. This is essential for monitoring active campaigns, call center operations, and queue management.
+
+## Base endpoint
+
+```
+/api/v1/business/{businessId}/queues
+```
+
+All queue endpoints require [API key authentication](/api/authentication) with appropriate business permissions.
+
+## Outbound call queues
+
+### Get outbound queue count
+
+Retrieve the total count of outbound call queue entries matching the specified filters.
+
+```bash
+POST /api/v1/business/{businessId}/queues/outbound/count
+```
+
+<ParamField path="businessId" type="number" required>
+  The unique identifier of the business
+</ParamField>
+
+**Request body:**
+
+<ParamField body="filters" type="object">
+  Optional filters for counting queue entries
+  
+  <Expandable title="Filter options">
+    <ParamField body="status" type="string">
+      Queue status: `Pending`, `InProgress`, `Completed`, `Failed`
+    </ParamField>
+    <ParamField body="campaignId" type="string">
+      Filter by specific campaign ID
+    </ParamField>
+    <ParamField body="dateRange" type="object">
+      Date range filter
+      <Expandable title="properties">
+        <ParamField body="start" type="string">
+          Start date (ISO 8601 format)
+        </ParamField>
+        <ParamField body="end" type="string">
+          End date (ISO 8601 format)
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Example request:**
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://app.iqra.bot/api/v1/business/12345/queues/outbound/count \
+  -H "Authorization: Token YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {
+      "status": "Pending",
+      "campaignId": "campaign_abc123"
+    }
+  }'
+```
+
+```javascript JavaScript
+const response = await fetch('https://app.iqra.bot/api/v1/business/12345/queues/outbound/count', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Token YOUR_API_KEY',
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    filters: {
+      status: 'Pending',
+      campaignId: 'campaign_abc123'
+    }
+  })
+});
+
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.post(
+    'https://app.iqra.bot/api/v1/business/12345/queues/outbound/count',
+    headers={
+        'Authorization': 'Token YOUR_API_KEY',
+        'Content-Type': 'application/json'
+    },
+    json={
+        'filters': {
+            'status': 'Pending',
+            'campaignId': 'campaign_abc123'
+        }
+    }
+)
+
+data = response.json()
+```
+</CodeGroup>
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Whether the request succeeded
+</ResponseField>
+
+<ResponseField name="data" type="number">
+  Total count of matching queue entries
+</ResponseField>
+
+### Get outbound queue entries
+
+Retrieve paginated outbound call queue entries with filtering and sorting.
+
+```bash
+POST /api/v1/business/{businessId}/queues/outbound
+```
+
+<ParamField body="page" type="number">
+  Page number (1-indexed, default: 1)
+</ParamField>
+
+<ParamField body="pageSize" type="number">
+  Number of results per page (default: 50, max: 100)
+</ParamField>
+
+<ParamField body="filters" type="object">
+  Filter criteria (same as count endpoint)
+</ParamField>
+
+<ParamField body="sortBy" type="string">
+  Field to sort by: `createdAt`, `updatedAt`, `scheduledTime`
+</ParamField>
+
+<ParamField body="sortOrder" type="string">
+  Sort direction: `asc` or `desc`
+</ParamField>
+
+### Get single outbound queue entry
+
+Retrieve detailed information about a specific outbound queue entry.
+
+```bash
+POST /api/v1/business/{businessId}/queues/outbound/{queueId}
+```
+
+<ParamField path="queueId" type="string" required>
+  The unique identifier of the queue entry
+</ParamField>
+
+## Inbound call queues
+
+### Get inbound queue count
+
+Retrieve the total count of inbound call queue entries.
+
+```bash
+POST /api/v1/business/{businessId}/queues/inbound/count
+```
+
+Similar structure to the outbound count endpoint.
+
+### Get inbound queue entries
+
+Retrieve paginated inbound call queue entries.
+
+```bash
+POST /api/v1/business/{businessId}/queues/inbound
+```
+
+### Get single inbound queue entry
+
+Retrieve detailed information about a specific inbound queue entry.
+
+```bash
+POST /api/v1/business/{businessId}/queues/inbound/{queueId}
+```
+
+## Queue entry structure
+
+<ResponseField name="id" type="string">
+  Unique identifier for the queue entry
+</ResponseField>
+
+<ResponseField name="businessId" type="number">
+  Associated business ID
+</ResponseField>
+
+<ResponseField name="campaignId" type="string">
+  Campaign identifier (for outbound calls)
+</ResponseField>
+
+<ResponseField name="agentId" type="string">
+  Agent handling the call
+</ResponseField>
+
+<ResponseField name="phoneNumber" type="string">
+  Phone number being called (outbound) or calling (inbound)
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Queue status: `Pending`, `InProgress`, `Completed`, `Failed`, `Cancelled`
+</ResponseField>
+
+<ResponseField name="scheduledTime" type="string">
+  When the call is scheduled (ISO 8601)
+</ResponseField>
+
+<ResponseField name="startedAt" type="string">
+  When the call started (ISO 8601)
+</ResponseField>
+
+<ResponseField name="completedAt" type="string">
+  When the call completed (ISO 8601)
+</ResponseField>
+
+<ResponseField name="retryCount" type="number">
+  Number of retry attempts
+</ResponseField>
+
+<ResponseField name="lastError" type="string">
+  Last error message if failed
+</ResponseField>
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Campaign monitoring" icon="chart-line">
+    Track the progress of outbound calling campaigns in real-time
+  </Card>
+  <Card title="Queue analytics" icon="gauge">
+    Analyze call queue metrics and performance
+  </Card>
+  <Card title="Call center operations" icon="headset">
+    Monitor inbound call queues for contact centers
+  </Card>
+  <Card title="Retry management" icon="rotate">
+    Identify and manage failed calls for retry
+  </Card>
+</CardGroup>
+
+## Error codes
+
+| Code | Description |
+|------|-------------|
+| `INVALID_BUSINESS_ID` | The business ID does not exist or you don't have access |
+| `INVALID_QUEUE_ID` | The specified queue entry was not found |
+| `INVALID_FILTERS` | Filter parameters are malformed |
+| `PERMISSION_DENIED` | API key lacks required permissions |
+
+## Related endpoints
+
+- [Calls API](/api/calls) - Initiate and manage calls
+- [Conversations API](/api/conversations) - Retrieve call transcripts and history
+- [Business API](/api/businesses) - Manage business configuration
